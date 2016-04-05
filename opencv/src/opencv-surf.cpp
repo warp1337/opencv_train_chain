@@ -74,7 +74,7 @@ int main( int argc, char** argv )
     //-- Step 2: Matching descriptor vectors using FLANN matcher
     matcher.match(descriptors_1, descriptors_2, matches);
 
-    double max_dist = 0.3; double min_dist = 0.2;
+    double max_dist = 0.3; double min_dist = 0.05;
 
     //-- Quick calculation of max and min distances between keypoints
     for( int i = 0; i < descriptors_1.rows; i++ ) {
@@ -82,7 +82,6 @@ int main( int argc, char** argv )
         if( dist < min_dist ) {
             min_dist = dist;
         }
-
         if( dist > max_dist ) {
             max_dist = dist;
         }
@@ -97,8 +96,8 @@ int main( int argc, char** argv )
     //-- PS.- radiusMatch can also be used here.
 
     for( int i = 0; i < descriptors_1.rows; i++ ) {
-        if(matches[i].distance <= max(2*min_dist, 0.02) ) {
-            good_matches.push_back( matches[i]);
+        if(matches[i].distance <= max(2*min_dist, 0.01) ) {
+            good_matches.push_back(matches[i]);
         }
     }
 
@@ -108,6 +107,7 @@ int main( int argc, char** argv )
         drawMatches( img_1, keypoints_1, img_2, keypoints_2,
                     good_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
                     vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+        cout << "-- Good Matches : " << good_matches.size() << endl;
     } catch(...) {
         continue;
     }
