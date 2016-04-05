@@ -45,14 +45,16 @@ int main( int argc, char** argv )
   int minHessian = 400;
   Ptr<SURF> detector = SURF::create();
   detector->setHessianThreshold(minHessian);
+  Mat descriptors_1;
   std::vector<KeyPoint> keypoints_1, keypoints_2;
-  Mat descriptors_1, descriptors_2;
   detector->detectAndCompute( img_1, Mat(), keypoints_1, descriptors_1 );
   FlannBasedMatcher matcher;
-  std::vector<DMatch> matches;
-  std::vector<DMatch> good_matches;
 
   for(;;) {
+
+    Mat descriptors_2;
+    std::vector<DMatch> matches;
+    std::vector<DMatch> good_matches;
 
     cap >> frame;
 
@@ -72,7 +74,7 @@ int main( int argc, char** argv )
     //-- Step 2: Matching descriptor vectors using FLANN matcher
     matcher.match(descriptors_1, descriptors_2, matches);
 
-    double max_dist = 0; double min_dist = 100;
+    double max_dist = 0.3; double min_dist = 0.2;
 
     //-- Quick calculation of max and min distances between keypoints
     for( int i = 0; i < descriptors_1.rows; i++ ) {
