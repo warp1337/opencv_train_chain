@@ -32,8 +32,8 @@ target_link_libraries(otc-opencv-surf
         ${OpenCV_LIBRARIES}
 )
 
-set_property(TARGET dtc-opencv-surf PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
-set_target_properties(dtc-opencv-surf PROPERTIES COMPILE_FLAGS -DCMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
+set_property(TARGET otc-opencv-surf PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
+set_target_properties(otc-opencv-surf PROPERTIES COMPILE_FLAGS -DCMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
 
 INSTALL(TARGETS otc-opencv-surf RUNTIME DESTINATION bin)
 INSTALL(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/training/dtc-collect-data" DESTINATION ${CMAKE_INSTALL_PREFIX}/bin/)
