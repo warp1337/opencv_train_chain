@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(opencv_train_chain)
 
 SET(OpenCV_MIN_VERSION "3.1.0")
-FIND_PATH(OpenCV_DIR NAMES opencv-config.cmake OpenCVConfig.cmake PATH_SUFFIXES lib/cmake lib)
+FIND_PATH(OpenCV_DIR NAMES opencv-config.cmake OpenCVConfig.cmake OpenCVModules.cmake PATH_SUFFIXES lib/cmake lib)
 FIND_PACKAGE( OpenCV ${OpenCV_MIN_VERSION} REQUIRED COMPONENTS core contrib features2d imgproc legacy objdetect video highgui)
 IF(OpenCV_FOUND)
         IF(${OpenCV_VERSION} VERSION_LESS ${OpenCV_MIN_VERSION} AND (SUPPORT_VIDEO OR SUPPORT_IMAGE) )
