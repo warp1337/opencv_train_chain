@@ -1,8 +1,51 @@
 /*
- * @file SURF_FlannMatcher
- * @brief SURF detector + descriptor + FLANN Matcher
- * @author A. Huaman
- */
+
+Author: Florian Lier [flier AT techfak.uni-bielefeld DOT de]
+
+Starting Basis: OpenCV 3.1.0 CPP Examples
+
+By downloading, copying, installing or using the software you agree to this license.
+If you do not agree to this license, do not download, install, copy or use the software.
+
+                          License Agreement
+               For Open Source Computer Vision Library
+                       (3-clause BSD License)
+
+Copyright (C) 2000-2016, Intel Corporation, all rights reserved.
+Copyright (C) 2009-2011, Willow Garage Inc., all rights reserved.
+Copyright (C) 2009-2016, NVIDIA Corporation, all rights reserved.
+Copyright (C) 2010-2013, Advanced Micro Devices, Inc., all rights reserved.
+Copyright (C) 2015-2016, OpenCV Foundation, all rights reserved.
+Copyright (C) 2015-2016, Itseez Inc., all rights reserved.
+Third party copyrights are property of their respective owners.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+  * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the following disclaimer in the documentation
+    and/or other materials provided with the distribution.
+
+  * Neither the names of the copyright holders nor the names of the contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+This software is provided by the copyright holders and contributors "as is" and
+any express or implied warranties, including, but not limited to, the implied
+warranties of merchantability and fitness for a particular purpose are disclaimed.
+In no event shall copyright holders or contributors be liable for any direct,
+indirect, incidental, special, exemplary, or consequential damages
+(including, but not limited to, procurement of substitute goods or services;
+loss of use, data, or profits; or business interruption) however caused
+and on any theory of liability, whether in contract, strict liability,
+or tort (including negligence or otherwise) arising in any way out of
+the use of this software, even if advised of the possibility of such damage.
+
+*/
+
 
 #include <stdio.h>
 #include <iostream>
@@ -14,24 +57,23 @@
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/highgui.hpp"
 #include "opencv2/xfeatures2d.hpp"
+
 using namespace std;
 using namespace cv;
 using namespace cv::xfeatures2d;
 void readme();
-/*
- * @function main
- * @brief Main function
- */
+
 int main( int argc, char** argv )
 {
 
   if( argc != 2 ) {
-    readme(); return -1;
+    readme();
+    return -1;
   }
 
-  VideoCapture cap(0); // open the default camera
+  VideoCapture cap(0);
 
-  if(!cap.isOpened()) {  // check if we succeeded
+  if(!cap.isOpened()) {
     return -1;
   }
 
@@ -57,10 +99,6 @@ int main( int argc, char** argv )
     std::vector<DMatch> good_matches;
 
     cap >> frame;
-
-    // if (frame.rows < img_1.rows) {
-    //     continue;
-    // }
 
     cvtColor(frame, img_2, COLOR_BGR2GRAY);
 
@@ -94,7 +132,6 @@ int main( int argc, char** argv )
     //-- or a small arbitary value ( 0.02 ) in the event that min_dist is very
     //-- small)
     //-- PS.- radiusMatch can also be used here.
-
     for( int i = 0; i < descriptors_1.rows; i++ ) {
         if(matches[i].distance <= max(2*min_dist, 0.01) ) {
             good_matches.push_back(matches[i]);
@@ -129,9 +166,6 @@ int main( int argc, char** argv )
 
 }
 
-/*
- * @function readme
- */
 void readme() {
-    std::cout << " Usage: ./otc-opencv-surf <img1>" << std::endl;
+    std::cout << "-- Usage: ./otc-opencv-surf <img1>" << std::endl;
 }

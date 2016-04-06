@@ -1,10 +1,37 @@
+#!/usr/bin/env python
+
+"""
+
+Copyright(c) <Florian Lier>
+
+This file may be licensed under the terms of the
+GNU Lesser General Public License Version 3 (the ``LGPL''),
+or (at your option) any later version.
+Software distributed under the License is distributed
+on an ``AS IS'' basis, WITHOUT WARRANTY OF ANY KIND, either
+express or implied. See the LGPL for the specific language
+governing rights and limitations.
+You should have received a copy of the LGPL along with this
+program. If not, go to http://www.gnu.org/licenses/lgpl.html
+or write to the Free Software Foundation, Inc.,
+51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+The development of this software was supported by the
+Excellence Cluster EXC 277 Cognitive Interaction Technology.
+The Excellence Cluster EXC 277 is a grant of the Deutsche
+Forschungsgemeinschaft (DFG) in the context of the German
+Excellence Initiative.
+
+Authors: Florian Lier
+<flier>@techfak.uni-bielefeld.de
+
+"""
+
 import numpy as np
 import cv2
-import time
 import sys
 
 cap = cv2.VideoCapture(0)
-sample = cv2.imread('/tmp/foo2.png', 0)
+sample = cv2.imread(sys.argv[1], 0)
 orb_sample = cv2.ORB()
 kp_sample, des_sample = orb_sample.detectAndCompute(sample, None)
 
@@ -32,7 +59,6 @@ def drawMatches(img1, kp1, img2, kp2, matches):
     y = 0
 
     for mat in matches:
-
         # Get the matching keypoints for each of the images
         img1_idx = mat.queryIdx
         img2_idx = mat.trainIdx
@@ -63,47 +89,41 @@ def drawMatches(img1, kp1, img2, kp2, matches):
 while True:
 
     ret, frame = cap.read()
-
     if ret is not True:
+        print ">>> WARNING: Waiting for image... "
         continue
-
     img = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     try:
-        # Initiate STAR detector
+        # Initiate ORB detector
         orb_obs = cv2.ORB()
-
         # Find the keypoints with ORB
         kp_obs = orb_obs.detect(img, None)
-
         # Compute the descriptors with ORB
         kp_obs, des_obs = orb_obs.detectAndCompute(img, None)
-
         # Create BFMatcher object
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-
         # Match descriptors.
         matches = bf.match(des_sample, des_obs)
-
     except Exception, e:
-        print e
+        print ">>> ERROR: ORB: ", e
 
     # Sort them in the order of their distance.
     try:
         matches = sorted(matches, key = lambda x:x.distance)
         print matches[1].distance
     except Exception, e:
-        print "MATCHES: ", e
+        print ">>> ERROR: MATCHES: ", e
 
     # Draw first 10 matches.
     try:
-        if len(matches) < 1:
-            print "No Matches"
+        if len(matches) < 10:
+            print ">>> Number of Matches < 10 ... next iteration ..."
             continue
-        result = drawMatches(img, kp_obs, sample, kp_sample, matches[:1])
+        result = drawMatches(img, kp_obs, sample, kp_sample, matches[:10])
         cv2.imshow(':: ORBPy (Quit: press q) ::', result)
     except Exception, e:
-        print "IMSHOW ", e
+        print ">>> ERROR: IMSHOW ", e
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         sys.exit(1)

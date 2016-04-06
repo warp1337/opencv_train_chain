@@ -16,7 +16,7 @@ ENDIF()
 
 SET(CMAKE_BUILD_TYPE Release)
 
-include_directories(${OpenCV_INCLUDE_DIRS})
+INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11 -march=core-avx-i -O2")
 
@@ -32,8 +32,23 @@ target_link_libraries(otc-opencv-surf
         ${OpenCV_LIBRARIES}
 )
 
+add_executable(otc-opencv-orb
+        opencv/src/opencv-orb.cpp
+        ${DUMMY_HEADER_LIST}
+)
+
+target_link_libraries(otc-opencv-orb
+        ${OpenCV_LIBRARIES}
+)
+
+
 set_property(TARGET otc-opencv-surf PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
 set_target_properties(otc-opencv-surf PROPERTIES COMPILE_FLAGS -DCMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
 
+set_property(TARGET otc-opencv-orb PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
+set_target_properties(otc-opencv-orb PROPERTIES COMPILE_FLAGS -DCMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
+
 INSTALL(TARGETS otc-opencv-surf RUNTIME DESTINATION bin)
+INSTALL(TARGETS otc-opencv-orb RUNTIME DESTINATION bin)
 INSTALL(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/training/otc-collect-data" DESTINATION ${CMAKE_INSTALL_PREFIX}/bin/)
+INSTALL(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/opencv/opencv-orb" DESTINATION ${CMAKE_INSTALL_PREFIX}/bin/)

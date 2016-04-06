@@ -1,0 +1,11 @@
+%YAML:1.0
+targets:
+ - /homes/fl/dev/local/sample_images/billy.jpg
+ - /homes/fl/dev/local/sample_images/flobi.png
+
+labels:
+ - "Billy"
+ - "Flobi"
+
+maxmatches: 10
+
