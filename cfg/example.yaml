@@ -1,11 +1,22 @@
 %YAML:1.0
 targets:
- - /homes/fl/dev/local/sample_images/billy.jpg
- - /homes/fl/dev/local/sample_images/flobi.png
+ - /homes/fl/dev/local/sample_images/card_billy_full.png
+ - /homes/fl/dev/local/sample_images/card_flobi_full.png
+ - /homes/fl/dev/local/sample_images/card_hands_full.png
+ - /homes/fl/dev/local/sample_images/card_citec_full.png
+ - /homes/fl/dev/local/sample_images/card_nao_full.png
 
 labels:
  - "Billy"
  - "Flobi"
+ - "Hands"
+ - "CITEC"
+ - "NAO"
 
-maxmatches: 10
+maxmatches: 15
 
+detectionthreshold: 30
+
+resolutionx: 960
+
+resolutiony: 540
