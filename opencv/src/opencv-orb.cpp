@@ -58,7 +58,6 @@ static void help() {
     cout << "  ./otc-opencv-orb /path/to/config.yaml" << endl;
 }
 
-
 vector<Scalar> color_mix() {
     vector<Scalar> colormix;
     // Blue
@@ -333,17 +332,22 @@ int main(int argc, char *argv[])
             for(int i=0; i < target_images.size(); i++) {
                 int sum_x = 0;
                 int sum_y = 0;
+                vector<Point2d> point_list;
                 vector<DMatch>::iterator it;
                 for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
                     // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
                     Point2d c_t = keys_camera_image[it->trainIdx].pt;
+                    point_list.push_back(c_t);
                     sum_x+=c_t.x;
                     sum_y+=c_t.y;
                     circle(frame, c_t, 3.0, colors[i], 1, 1 );
                 }
+
                 Point2d location = Point2d(sum_x/max_number_matching_points, sum_y/max_number_matching_points);
+
                 if (cum_distance[i] <= detection_threshold) {
                     putText(frame, target_labels[i], location, fontFace, fontScale, colors[i], 2, LINE_AA);
+
                 }
                 string label = target_labels[i]+": ";
                 string distance_raw = to_string(cum_distance[i]);
