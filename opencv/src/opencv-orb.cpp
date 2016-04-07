@@ -213,7 +213,6 @@ int main(int argc, char *argv[])
 
     for(;;) {
 
-        // cap.set(CV_CAP_PROP_FOURCC, CV_FOURCC('m', 'j', 'p', 'g'));
         cap >> frame;
 
         // Test frames

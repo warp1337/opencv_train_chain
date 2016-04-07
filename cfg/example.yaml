@@ -13,10 +13,10 @@ labels:
  - "CITEC"
  - "NAO"
 
-maxmatches: 15
+maxmatches: 5
 
 detectionthreshold: 30
 
-resolutionx: 960
+resolutionx: 1920
 
-resolutiony: 540
+resolutiony: 1080
