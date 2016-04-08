@@ -46,10 +46,13 @@ the use of this software, even if advised of the possibility of such damage.
 
 */
 
+#include <opencv2/core/utility.hpp>
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include <iostream>
 #include <string>
+#include <algorithm>
+#include <functional>
 
 using namespace std;
 using namespace cv;
@@ -80,6 +83,7 @@ vector<Scalar> color_mix() {
     colormix.push_back(Scalar(133, 160, 22));
     // Black
     colormix.push_back(Scalar(0, 0, 0));
+
     return colormix;
 }
 
@@ -89,8 +93,11 @@ int main(int argc, char *argv[])
     vector<String> typeDesc;
     vector<String> typeAlgoMatch;
     vector<Scalar> colors;
-    std::vector<String> target_paths;
-    std::vector<String> target_labels;
+    vector<int> winner;
+    vector<Point2d> last_winner;
+    vector<vector<int>> train_list;
+    vector<String> target_paths;
+    vector<String> target_labels;
 
     int max_number_matching_points;
     const int fontFace = FONT_HERSHEY_PLAIN;
@@ -108,11 +115,8 @@ int main(int argc, char *argv[])
     Ptr<DescriptorMatcher> descriptorMatcher;
 
     typeDesc.push_back("ORB");
-    // typeDesc.push_back("BRISK");
-    // typeAlgoMatch.push_back("BruteForce");
-    // typeAlgoMatch.push_back("BruteForce-L1");
-    // typeAlgoMatch.push_back("BruteForce-Hamming(2)");
-    typeAlgoMatch.push_back("BruteForce-Hamming");
+    typeAlgoMatch.push_back("BruteForce-Hamming(2)");
+    // typeAlgoMatch.push_back("BruteForce-Hamming");
 
     cv::CommandLineParser parser(argc, argv, "{@config |<none>| yaml config file}" "{help h ||}");
 
@@ -149,7 +153,7 @@ int main(int argc, char *argv[])
         }
 
         if(idx > 10) {
-            cout << "Sorry currently only 10 targets are allowd" << endl;
+            cout << "Sorry currently only 10 targets are allowed" << endl;
             return 0;
         }
 
@@ -169,8 +173,16 @@ int main(int argc, char *argv[])
 
     colors = color_mix();
 
+    // Fill training list
+    for(int i=0; i < target_paths.size(); i++) {
+        train_list.push_back({0,0});
+        winner.push_back(0);
+        last_winner.push_back(Point2d(0,0));
+    }
+
     vector<Mat> target_images;
     Ptr<Feature2D> b;
+    //b = ORB::create(700, 1.2f, 32, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
     b = ORB::create();
 
     vector<vector<KeyPoint>> keys_current_target;
@@ -233,10 +245,20 @@ int main(int argc, char *argv[])
         // Descriptor for current_target_image and camera_image
         Mat desc_camera_image;
         // Detect and Compute keypints and descriptors
-        b->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
+
+        try {
+            b->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
+        }
+        catch (Exception& e) {
+            continue;
+        }
+
+        if (desc_camera_image.rows < 1 || desc_camera_image.cols < 1) {
+            continue;
+        }
 
         vector<double> desMethCmp;
-        vector<String>::iterator itDesc;
+        vector<String>::iterator itDesc;      
 
         // For now this for loop is obsolete, but we may want to evaluate further
         // approaches in a loop later on.
@@ -266,19 +288,14 @@ int main(int argc, char *argv[])
                             cout << "It's strange. You should use Hamming distance only for a binary descriptor\n";
                             cout << "**************************************************************************\n";
                         }
-                        if ((*itMatcher == "BruteForce" || *itMatcher == "BruteForce-L1") && (b->defaultNorm() >= NORM_HAMMING))
-                        {
-                            cout << "**************************************************************************\n";
-                            cout << "It's strange. You shouldn't use L1 or L2 distance for a binary descriptor\n";
-                            cout << "**************************************************************************\n";
-                        }
+
                         try {
 
                             descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
 
                             // Keep best matches only to have a nice drawing.
                             // We sort distance between descriptor matches
-                            if (int(matches.size()) <= max_number_matching_points/2) {
+                            if (int(matches.size()) <= max_number_matching_points) {
                                 cout << "Not enough Matches: " << matches.size() << endl;
                                 continue;
                             }
@@ -293,6 +310,7 @@ int main(int argc, char *argv[])
                             }
 
                             sortIdx(tab, index, SORT_EVERY_COLUMN + SORT_ASCENDING);
+
                             vector<DMatch> bestMatches;
 
                             for (int i = 0; i<max_number_matching_points; i++)
@@ -332,25 +350,66 @@ int main(int argc, char *argv[])
             for(int i=0; i < target_images.size(); i++) {
                 int sum_x = 0;
                 int sum_y = 0;
-                vector<Point2d> point_list;
+
                 vector<DMatch>::iterator it;
+                vector<int> point_list_x;
+                vector<int> point_list_y;
+
                 for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
                     // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
                     Point2d c_t = keys_camera_image[it->trainIdx].pt;
-                    point_list.push_back(c_t);
+
+                    vector<int>::iterator it2;
+                    it2 = find(train_list[i].begin(), train_list[i].end(), it->trainIdx);
+                    if (it2 != train_list[i].end()) {
+                        winner.at(i) = it->trainIdx;
+                        train_list[i].clear();
+                    } else {
+                        train_list[i].push_back(it->trainIdx);
+                    }
+
+                    point_list_x.push_back(c_t.x);
+                    point_list_y.push_back(c_t.y);
                     sum_x+=c_t.x;
                     sum_y+=c_t.y;
                     circle(frame, c_t, 3.0, colors[i], 1, 1 );
                 }
 
-                Point2d location = Point2d(sum_x/max_number_matching_points, sum_y/max_number_matching_points);
+                // sort(point_list_x.begin(), point_list_x.end());
+                // sort(point_list_y.begin(), point_list_y.end());
+
+                /* for(int i=1; i < max_number_matching_points-12; i++) {
+                    point_list_x.erase(point_list_x.end() - i);
+                    point_list_y.erase(point_list_y.end() - i);
+                } */
+
+                nth_element(point_list_x.begin(), point_list_x.begin() + point_list_x.size()/2, point_list_x.end());
+                nth_element(point_list_y.begin(), point_list_y.begin() + point_list_y.size()/2, point_list_y.end());
+
+                int median_x =  point_list_x[point_list_x.size()/2];
+                int median_y = point_list_y[point_list_y.size()/2];
+
+                // Point2d location = Point2d(sum_x/max_number_matching_points, sum_y/max_number_matching_points);
+                Point2d location = Point2d(median_x, median_y);
+
+                /*if(winner[i] != 0) {
+                    cout << abs(last_winner[i].x - keys_camera_image[winner[i]].pt.x) << endl;
+                    if (abs(last_winner[i].x - keys_camera_image[winner[i]].pt.x) < 20) {
+                        putText(frame, target_labels[i], last_winner[i], fontFace, fontScale, colors[i], 2, LINE_AA);
+                    } else {
+                        putText(frame, target_labels[i], keys_camera_image[winner[i]].pt, fontFace, fontScale, colors[i], 2, LINE_AA);
+                    }
+                    last_winner.at(i) = keys_camera_image[winner[i]].pt;
+                }*/
 
                 if (cum_distance[i] <= detection_threshold) {
                     putText(frame, target_labels[i], location, fontFace, fontScale, colors[i], 2, LINE_AA);
 
                 }
+
                 string label = target_labels[i]+": ";
                 string distance_raw = to_string(cum_distance[i]);
+
                 putText(frame, label+distance_raw, Point2d(text_origin, text_offset_y), fontFace, fontScale, colors[i], 1, LINE_AA);
                 text_offset_y = text_offset_y+15;
             }
