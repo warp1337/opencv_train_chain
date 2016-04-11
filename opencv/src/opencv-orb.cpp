@@ -47,6 +47,7 @@ the use of this software, even if advised of the possibility of such damage.
 */
 
 #include <opencv2/core/utility.hpp>
+#include "opencv2/imgproc/imgproc.hpp"
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include <iostream>
@@ -87,6 +88,62 @@ vector<Scalar> color_mix() {
 }
 
 
+vector<Rect> pre_process_contours(Mat input_image, int thresh, RNG rng)
+{
+    Mat threshold_output;
+    vector<vector<Point> > contours;
+    vector<Vec4i> hierarchy;
+    Mat src_gray;
+    vector<Rect> rects;
+
+    // Convert image to gray and blur it
+    cvtColor(input_image, src_gray, CV_BGR2GRAY);
+    blur(src_gray, src_gray, Size(3,3));
+
+    // Detect edges using Threshold
+    threshold(src_gray, threshold_output, thresh, 255, THRESH_BINARY );
+    /// Find contours
+    findContours(threshold_output, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+
+    // Approximate contours to polygons + get bounding rects and circles
+    vector<vector<Point>> contours_poly(contours.size());
+    vector<Rect> boundRect(contours.size());
+    // vector<Point2f>center(contours.size());
+    // vector<float>radius(contours.size());
+    // cout << hierarchy.size() << endl;
+
+    for( int i = 0; i < contours.size(); i++ )
+    {
+        approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);
+        boundRect[i] = boundingRect(Mat(contours_poly[i]));
+        // minEnclosingCircle((Mat)contours_poly[i],center[i],radius[i]);
+    }
+
+    // Draw polygonal contour + bonding rects + circles
+    Mat drawing = Mat::zeros( threshold_output.size(), CV_8UC3 );
+    // cout << contours.size() << endl;
+    for( int i = 0; i < contours.size(); i++ )
+    {
+        if (hierarchy[i][3] > -1) {
+            if (boundRect[i].area() > 10000) {
+                Scalar color = Scalar(rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255));
+                drawContours(drawing, contours_poly, i, color, 1, 8, vector<Vec4i>(), 0, Point());
+                rectangle( drawing, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+                rects.push_back(boundRect[i]);
+                // cout << boundRect[i] << endl;
+                // circle( drawing, center[i], (int)radius[i], color, 2, 8, 0 );
+            }
+        }
+    }
+
+    // Show in a window
+    namedWindow(":: OTC Contours ::", CV_WINDOW_AUTOSIZE );
+    imshow(":: OTC Contours ::", drawing );
+
+    return rects;
+}
+
+
 int main(int argc, char *argv[])
 {
     vector<Scalar> colors;
@@ -107,6 +164,9 @@ int main(int argc, char *argv[])
     int detection_threshold = 0;
     int res_x = 640;
     int res_y = 480;
+
+    int thresh = 150;
+    RNG rng(12345);
 
     String type_descriptor;
     String point_matcher;
@@ -236,7 +296,9 @@ int main(int argc, char *argv[])
     Mat desc_camera_image;
 
     for(;;) {
+
         cap >> frame;
+        Mat cont = frame.clone();
 
         // Check frames
         if (frame.rows*frame.cols <= 0) {
@@ -244,8 +306,20 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        vector<Rect> rects;
+        rects = pre_process_contours(cont, thresh, rng);
+
+        if (rects.size() < 1){
+            continue;
+        }
+
+        Mat cut = Mat(frame, rects[0]);
+
         // Convert to grey
-        cvtColor(frame, camera_image, COLOR_BGR2GRAY);
+        cvtColor(cut, camera_image, COLOR_BGR2GRAY);
+
+        namedWindow(":: OTC ORB Detection Cut ::", WINDOW_AUTOSIZE);
+        imshow(":: OTC ORB Detection Cut ::", camera_image);
 
         // Skip first 30 frames in order to compensate color/brightness correction
         if ( ++frame_num < num_to_skip )
@@ -361,7 +435,8 @@ int main(int argc, char *argv[])
 
                 point_list_x.push_back(c_t.x);
                 point_list_y.push_back(c_t.y);
-                circle(frame, c_t, 3.0, colors[i], 1, 1 );
+                Point2d shift(c_t.x+rects[i].tl().x, c_t.y+rects[i].tl().y );
+                circle(frame, shift, 3.0, colors[i], 1, 1 );
             }
 
             nth_element(point_list_x.begin(), point_list_x.begin() + point_list_x.size()/2, point_list_x.end());
@@ -370,7 +445,8 @@ int main(int argc, char *argv[])
             int median_x =  point_list_x[point_list_x.size()/2];
             int median_y = point_list_y[point_list_y.size()/2];
 
-            Point2d location = Point2d(median_x, median_y);
+            Point2d location(median_x+rects[i].tl().x, median_y+rects[i].tl().y );
+            //Point2d location = Point2d(median_x, median_y);
 
             if (cum_distance[i] <= detection_threshold) {
                 putText(frame, target_labels[i], location, fontFace, fontScale, colors[i], 2, LINE_AA);
@@ -384,8 +460,8 @@ int main(int argc, char *argv[])
             text_offset_y = text_offset_y+15;
         }
 
-        namedWindow(":: OTC ORB ::", WINDOW_AUTOSIZE);
-        imshow(":: OTC ORB ::", frame);
+        namedWindow(":: OTC ORB Detection::", WINDOW_AUTOSIZE);
+        imshow(":: OTC ORB Detection::", frame);
 
         if(waitKey(1) >= 0) {
             return 0;
