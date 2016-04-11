@@ -83,15 +83,12 @@ vector<Scalar> color_mix() {
     colormix.push_back(Scalar(133, 160, 22));
     // Black
     colormix.push_back(Scalar(0, 0, 0));
-
     return colormix;
 }
 
 
 int main(int argc, char *argv[])
 {
-    vector<String> typeDesc;
-    vector<String> typeAlgoMatch;
     vector<Scalar> colors;
     vector<int> winner;
     vector<Point2d> last_winner;
@@ -99,10 +96,10 @@ int main(int argc, char *argv[])
     vector<String> target_paths;
     vector<String> target_labels;
 
+    int max_keypoints;
     int max_number_matching_points;
     const int fontFace = FONT_HERSHEY_PLAIN;
     const double fontScale = 1;
-    const int thickness = 1;
     int frame_num = 0;
     const int num_to_skip = 60;
     const int text_origin = 10;
@@ -111,12 +108,14 @@ int main(int argc, char *argv[])
     int res_x = 640;
     int res_y = 480;
 
+    String type_descriptor;
+    String point_matcher;
+
     // Descriptor Matcher
     Ptr<DescriptorMatcher> descriptorMatcher;
-
-    typeDesc.push_back("ORB");
-    typeAlgoMatch.push_back("BruteForce-Hamming(2)");
-    // typeAlgoMatch.push_back("BruteForce-Hamming");
+    // FlannBased
+    // FlannBasedMatcher descriptorMatcherFlann(new flann::LshIndexParams(20,10,2));
+    // FlannBasedMatcher descriptorMatcherFlann(new flann::LshIndexParams(5,24,2));
 
     cv::CommandLineParser parser(argc, argv, "{@config |<none>| yaml config file}" "{help h ||}");
 
@@ -128,7 +127,16 @@ int main(int argc, char *argv[])
 
     FileStorage fs(parser.get<string>(0), FileStorage::READ);
 
-    if (fs.isOpened()) {
+    if (fs.isOpened()) {\
+        fs["keypointalgo"] >> type_descriptor;
+        cout << "Keypoint Descriptor --> " << type_descriptor  << endl;
+
+        fs["matcher"] >> point_matcher;
+        cout << "Matching Algorithm --> " << point_matcher  << endl;
+
+        fs["maxkeypoints"] >> max_keypoints;
+        cout << "Keypoints: --> " << max_keypoints  << endl;
+
         max_number_matching_points = fs["maxmatches"];
         cout << "Maximum number of matching points --> " << max_number_matching_points << endl;
 
@@ -152,8 +160,8 @@ int main(int argc, char *argv[])
             target_paths.push_back((String)(*it));
         }
 
-        if(idx > 10) {
-            cout << "Sorry currently only 10 targets are allowed" << endl;
+        if(idx > 5) {
+            cout << "Sorry, only 5 targets are allowed (for now)" << endl;
             return 0;
         }
 
@@ -182,38 +190,37 @@ int main(int argc, char *argv[])
 
     vector<Mat> target_images;
     Ptr<Feature2D> b;
-    //b = ORB::create(700, 1.2f, 32, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
-    b = ORB::create();
+    // This is the standard for OpenCV
+    // b = ORB::create(500, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
+    // b = ORB::create();
+    b = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
 
     vector<vector<KeyPoint>> keys_current_target;
     vector<Mat> desc_current_target_image;
 
+    // Compute Keypoints and Descriptors for all target images
     for(int i=0; i < target_paths.size(); i++){
+        Mat tmp_img = imread(target_paths[i], IMREAD_GRAYSCALE);
 
-       Mat tmp_img = imread(target_paths[i], IMREAD_GRAYSCALE);
+        if (tmp_img.rows*tmp_img.cols <= 0) {
+            cout << "Image " << target_paths[i] << " is empty or cannot be found\n";
+            return 0;
+        }
 
-       if (tmp_img.rows*tmp_img.cols <= 0) {
-           cout << "Image " << target_paths[i] << " is empty or cannot be found\n";
-           return 0;
-       }
+        target_images.push_back(tmp_img);
 
-       target_images.push_back(tmp_img);
+        vector<KeyPoint> tmp_kp;
+        Mat tmp_dc;
 
-       vector<KeyPoint> tmp_kp;
-       Mat tmp_dc;
+        b->detect(tmp_img, tmp_kp, Mat());
+        b->compute(tmp_img, tmp_kp, tmp_dc);
 
-       b->detect(tmp_img, tmp_kp, Mat());
-       b->compute(tmp_img, tmp_kp, tmp_dc);
-
-       keys_current_target.push_back(tmp_kp);
-       desc_current_target_image.push_back(tmp_dc);
-
+        keys_current_target.push_back(tmp_kp);
+        desc_current_target_image.push_back(tmp_dc);
     }
 
     Mat camera_image, frame;
-
     VideoCapture cap(0);
-
     cap.set(CV_CAP_PROP_FRAME_WIDTH, res_x);
     cap.set(CV_CAP_PROP_FRAME_HEIGHT, res_y);
 
@@ -222,11 +229,16 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    for(;;) {
+    descriptorMatcher = DescriptorMatcher::create(point_matcher);
+    // Keypoint for current_target_image and camera_image
+    vector<KeyPoint> keys_camera_image;
+    // Descriptor for current_target_image and camera_image
+    Mat desc_camera_image;
 
+    for(;;) {
         cap >> frame;
 
-        // Test frames
+        // Check frames
         if (frame.rows*frame.cols <= 0) {
             cout << "Camera Image " << " is NULL\n";
             continue;
@@ -235,16 +247,9 @@ int main(int argc, char *argv[])
         // Convert to grey
         cvtColor(frame, camera_image, COLOR_BGR2GRAY);
 
-        // Skip first 30 frames in order to compensate color/brightness
-        // correction
+        // Skip first 30 frames in order to compensate color/brightness correction
         if ( ++frame_num < num_to_skip )
-               continue;
-
-        // Keypoint  for current_target_image and camera_image
-        vector<KeyPoint> keys_camera_image;
-        // Descriptor for current_target_image and camera_image
-        Mat desc_camera_image;
-        // Detect and Compute keypints and descriptors
+            continue;
 
         try {
             b->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
@@ -257,170 +262,133 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        vector<double> desMethCmp;
-        vector<String>::iterator itDesc;      
+        vector<double> cum_distance;
+        vector<vector<DMatch>> cum_matches;
 
-        // For now this for loop is obsolete, but we may want to evaluate further
-        // approaches in a loop later on.
-        for (itDesc = typeDesc.begin(); itDesc != typeDesc.end(); itDesc++) {
+        for(int i=0; i < target_images.size(); i++) {
+            vector<DMatch> matches;
 
-            vector<double> cum_distance;
-            vector<vector<DMatch>> cum_matches;
-
-            for(int i=0; i < target_images.size(); i++) {
-
-                // Match between current_target_image and camera_image
-                vector<DMatch> matches;
-
-                // What Matcher
-                vector<String>::iterator itMatcher = typeAlgoMatch.end();
+            try {
+                if ((point_matcher == "BruteForce-Hamming" || point_matcher == "BruteForce-Hamming(2)") && (b->descriptorType() == CV_32F || b->defaultNorm() <= NORM_L2SQR))
+                {
+                    cout << "**************************************************************************\n";
+                    cout << "It's strange. You should use Hamming distance only for a binary descriptor\n";
+                    cout << "**************************************************************************\n";
+                }
+                if (point_matcher == "FlannBased") {
+                    if(desc_current_target_image[i].type() != CV_32F) {
+                        desc_current_target_image[i].convertTo(desc_current_target_image[i], CV_32F);
+                    }
+                    if(desc_camera_image.type()!= CV_32F) {
+                        desc_camera_image.convertTo(desc_camera_image, CV_32F);
+                    }
+                }
 
                 try {
-                    // For now this for loop is obsolete too, but we may want to
-                    // evaluate further approaches in a loop later on.
-                    for (itMatcher = typeAlgoMatch.begin(); itMatcher != typeAlgoMatch.end(); itMatcher++) {
-
-                        descriptorMatcher = DescriptorMatcher::create(*itMatcher);
-
-                        if ((*itMatcher == "BruteForce-Hamming" || *itMatcher == "BruteForce-Hamming(2)") && (b->descriptorType() == CV_32F || b->defaultNorm() <= NORM_L2SQR))
-                        {
-                            cout << "**************************************************************************\n";
-                            cout << "It's strange. You should use Hamming distance only for a binary descriptor\n";
-                            cout << "**************************************************************************\n";
-                        }
-
-                        try {
-
-                            descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
-
-                            // Keep best matches only to have a nice drawing.
-                            // We sort distance between descriptor matches
-                            if (int(matches.size()) <= max_number_matching_points) {
-                                cout << "Not enough Matches: " << matches.size() << endl;
-                                continue;
-                            }
-
-                            Mat index;
-                            int nbMatch=int(matches.size());
-                            Mat tab(nbMatch, 1, CV_32F);
-
-                            for (int i = 0; i<nbMatch; i++)
-                            {
-                                tab.at<float>(i, 0) = matches[i].distance;
-                            }
-
-                            sortIdx(tab, index, SORT_EVERY_COLUMN + SORT_ASCENDING);
-
-                            vector<DMatch> bestMatches;
-
-                            for (int i = 0; i<max_number_matching_points; i++)
-                            {
-                                bestMatches.push_back(matches[index.at<int>(i, 0)]);
-                            }
-
-                            cum_matches.push_back(bestMatches);
-
-                            vector<DMatch>::iterator it;
-                            double raw_distance_sum = 0;
-
-                            for (it = bestMatches.begin(); it != bestMatches.end(); it++) {
-                                raw_distance_sum = raw_distance_sum + it->distance;
-                            }
-
-                            double mean_distance = raw_distance_sum/max_number_matching_points;
-                            cum_distance.push_back(mean_distance);
-                        }
-                        catch (Exception& e) {
-                            cout << "Cumulative distance cannot be computed, next iteration" << endl;
-                            desMethCmp.push_back(-1);
-                        }
+                    if (point_matcher == "FlannBased") {
+                        // descriptorMatcherFlann.match(desc_current_target_image[i], desc_camera_image, matches);
+                        cout << "Flann support is disbaled." << endl;
+                        return 0;
+                    } else {
+                        descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
                     }
+
+                    // Keep best matches only to have a nice drawing.
+                    // We sort distance between descriptor matches
+                    if (int(matches.size()) <= max_number_matching_points) {
+                        cout << "Not enough matches: " << matches.size() << endl;
+                        continue;
+                    }
+
+                    Mat index;
+                    int nbMatch=int(matches.size());
+                    Mat tab(nbMatch, 1, CV_32F);
+
+                    for (int i = 0; i<nbMatch; i++)
+                    {
+                        tab.at<float>(i, 0) = matches[i].distance;
+                    }
+
+                    sortIdx(tab, index, SORT_EVERY_COLUMN + SORT_ASCENDING);
+
+                    vector<DMatch> bestMatches;
+
+                    for (int i = 0; i<max_number_matching_points; i++)
+                    {
+                        bestMatches.push_back(matches[index.at<int>(i, 0)]);
+                    }
+
+                    cum_matches.push_back(bestMatches);
+
+                    vector<DMatch>::iterator it;
+                    double raw_distance_sum = 0;
+
+                    for (it = bestMatches.begin(); it != bestMatches.end(); it++) {
+                        raw_distance_sum = raw_distance_sum + it->distance;
+                    }
+
+                    double mean_distance = raw_distance_sum/max_number_matching_points;
+                    cum_distance.push_back(mean_distance);
                 }
                 catch (Exception& e) {
-                    cout << "Feature : " << *itDesc << "\n";
-                    if (itMatcher != typeAlgoMatch.end()) {
-                        cout << "Matcher : " << *itMatcher << "\n";
-                    }
-                    cout << "Matcher is wating for input..." << endl;
+                    cout << "Cumulative distance cannot be computed, next iteration" << endl;
                 }
             }
+            catch (Exception& e) {
+                cout << "Matcher is wating for input..." << endl;
+            }
+        }
 
-            text_offset_y = 20;
+        text_offset_y = 20;
 
-            for(int i=0; i < target_images.size(); i++) {
-                int sum_x = 0;
-                int sum_y = 0;
+        for(int i=0; i < target_images.size(); i++) {
+            vector<DMatch>::iterator it;
+            vector<int> point_list_x;
+            vector<int> point_list_y;
 
-                vector<DMatch>::iterator it;
-                vector<int> point_list_x;
-                vector<int> point_list_y;
+            for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
+                // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
+                Point2d c_t = keys_camera_image[it->trainIdx].pt;
 
-                for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
-                    // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
-                    Point2d c_t = keys_camera_image[it->trainIdx].pt;
-
-                    vector<int>::iterator it2;
-                    it2 = find(train_list[i].begin(), train_list[i].end(), it->trainIdx);
-                    if (it2 != train_list[i].end()) {
-                        winner.at(i) = it->trainIdx;
-                        train_list[i].clear();
-                    } else {
-                        train_list[i].push_back(it->trainIdx);
-                    }
-
-                    point_list_x.push_back(c_t.x);
-                    point_list_y.push_back(c_t.y);
-                    sum_x+=c_t.x;
-                    sum_y+=c_t.y;
-                    circle(frame, c_t, 3.0, colors[i], 1, 1 );
+                vector<int>::iterator it2;
+                it2 = find(train_list[i].begin(), train_list[i].end(), it->trainIdx);
+                if (it2 != train_list[i].end()) {
+                    winner.at(i) = it->trainIdx;
+                    train_list[i].clear();
+                } else {
+                    train_list[i].push_back(it->trainIdx);
                 }
 
-                // sort(point_list_x.begin(), point_list_x.end());
-                // sort(point_list_y.begin(), point_list_y.end());
-
-                /* for(int i=1; i < max_number_matching_points-12; i++) {
-                    point_list_x.erase(point_list_x.end() - i);
-                    point_list_y.erase(point_list_y.end() - i);
-                } */
-
-                nth_element(point_list_x.begin(), point_list_x.begin() + point_list_x.size()/2, point_list_x.end());
-                nth_element(point_list_y.begin(), point_list_y.begin() + point_list_y.size()/2, point_list_y.end());
-
-                int median_x =  point_list_x[point_list_x.size()/2];
-                int median_y = point_list_y[point_list_y.size()/2];
-
-                // Point2d location = Point2d(sum_x/max_number_matching_points, sum_y/max_number_matching_points);
-                Point2d location = Point2d(median_x, median_y);
-
-                /*if(winner[i] != 0) {
-                    cout << abs(last_winner[i].x - keys_camera_image[winner[i]].pt.x) << endl;
-                    if (abs(last_winner[i].x - keys_camera_image[winner[i]].pt.x) < 20) {
-                        putText(frame, target_labels[i], last_winner[i], fontFace, fontScale, colors[i], 2, LINE_AA);
-                    } else {
-                        putText(frame, target_labels[i], keys_camera_image[winner[i]].pt, fontFace, fontScale, colors[i], 2, LINE_AA);
-                    }
-                    last_winner.at(i) = keys_camera_image[winner[i]].pt;
-                }*/
-
-                if (cum_distance[i] <= detection_threshold) {
-                    putText(frame, target_labels[i], location, fontFace, fontScale, colors[i], 2, LINE_AA);
-
-                }
-
-                string label = target_labels[i]+": ";
-                string distance_raw = to_string(cum_distance[i]);
-
-                putText(frame, label+distance_raw, Point2d(text_origin, text_offset_y), fontFace, fontScale, colors[i], 1, LINE_AA);
-                text_offset_y = text_offset_y+15;
+                point_list_x.push_back(c_t.x);
+                point_list_y.push_back(c_t.y);
+                circle(frame, c_t, 3.0, colors[i], 1, 1 );
             }
 
-            namedWindow(":: OTC ORB ::", WINDOW_AUTOSIZE);
-            imshow(":: OTC ORB ::", frame);
+            nth_element(point_list_x.begin(), point_list_x.begin() + point_list_x.size()/2, point_list_x.end());
+            nth_element(point_list_y.begin(), point_list_y.begin() + point_list_y.size()/2, point_list_y.end());
 
-            if(waitKey(1) >= 0) {
-                return 0;
+            int median_x =  point_list_x[point_list_x.size()/2];
+            int median_y = point_list_y[point_list_y.size()/2];
+
+            Point2d location = Point2d(median_x, median_y);
+
+            if (cum_distance[i] <= detection_threshold) {
+                putText(frame, target_labels[i], location, fontFace, fontScale, colors[i], 2, LINE_AA);
+
             }
 
+            string label = target_labels[i]+": ";
+            string distance_raw = to_string(cum_distance[i]);
+
+            putText(frame, label+distance_raw, Point2d(text_origin, text_offset_y), fontFace, fontScale, colors[i], 1, LINE_AA);
+            text_offset_y = text_offset_y+15;
+        }
+
+        namedWindow(":: OTC ORB ::", WINDOW_AUTOSIZE);
+        imshow(":: OTC ORB ::", frame);
+
+        if(waitKey(1) >= 0) {
+            return 0;
         }
     }
 
