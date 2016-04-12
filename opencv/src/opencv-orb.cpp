@@ -60,6 +60,9 @@ the use of this software, even if advised of the possibility of such damage.
 using namespace std;
 using namespace cv;
 
+#include <opencv2/gpu/gpu.hpp>
+
+
 static void help() {
     cout << "  ./otc-opencv-orb /path/to/config.yaml" << endl;
 }
@@ -169,7 +172,9 @@ int main(int argc, char *argv[])
     String point_matcher;
 
     // Descriptor Matcher
-    Ptr<DescriptorMatcher> descriptorMatcher;
+    // Ptr<DescriptorMatcher> descriptorMatcher;
+    // Ptr<gpu::DescriptorMatcher> matcher;
+    gpu::BruteForceMatcher_GPU_base gpu_matcher;
     // FlannBased
     // FlannBasedMatcher descriptorMatcherFlann(new flann::LshIndexParams(20,10,2));
     // FlannBasedMatcher descriptorMatcherFlann(new flann::LshIndexParams(5,24,2));
@@ -247,19 +252,25 @@ int main(int argc, char *argv[])
       }
     */
 
-    vector<Mat> target_images;
-    Ptr<Feature2D> b;
+    vector<gpu::GpuMat> target_images;
     // This is the standard for OpenCV
     // b = ORB::create(500, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
     // b = ORB::create();
-    b = ORB::create(max_keypoints, 1.2f, 32, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
+    // b = ORB::create(max_keypoints, 1.2f, 32, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
 
-    vector<vector<KeyPoint>> keys_current_target;
-    vector<Mat> desc_current_target_image;
+    // GPU
+    gpu::ORB_GPU b(2000);
+    b.blurForDescriptor = true;
+    vector<gpu::GpuMat> keys_current_target;
+    vector<gpu::GpuMat> desc_current_target_image;
+
+    // vector<Mat> desc_current_target_image;
 
     // Compute Keypoints and Descriptors for all target images
     for(int i=0; i < target_paths.size(); i++){
-        Mat tmp_img = imread(target_paths[i], IMREAD_GRAYSCALE);
+
+        Mat tmp_img_mat = imread(target_paths[i], IMREAD_GRAYSCALE);
+        gpu::GpuMat tmp_img(tmp_img_mat);
 
         if (tmp_img.rows*tmp_img.cols <= 0) {
             cout << "Image " << target_paths[i] << " is empty or cannot be found\n";
@@ -268,17 +279,20 @@ int main(int argc, char *argv[])
 
         target_images.push_back(tmp_img);
 
-        vector<KeyPoint> tmp_kp;
-        Mat tmp_dc;
+        gpu::GpuMat tmp_kp;
+        gpu::GpuMat tmp_dc;
 
-        b->detect(tmp_img, tmp_kp, Mat());
-        b->compute(tmp_img, tmp_kp, tmp_dc);
+        b(tmp_img, gpu::GpuMat(), tmp_kp, tmp_dc);
 
         keys_current_target.push_back(tmp_kp);
+
+        vector<KeyPoint> t;
+
         desc_current_target_image.push_back(tmp_dc);
     }
 
     Mat camera_image, frame;
+
     VideoCapture cap(0);
     cap.set(CV_CAP_PROP_FRAME_WIDTH, res_x);
     cap.set(CV_CAP_PROP_FRAME_HEIGHT, res_y);
@@ -288,13 +302,16 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    descriptorMatcher = DescriptorMatcher::create(point_matcher);
+    // descriptorMatcher = DescriptorMatcher::create(point_matcher);
+    // gpu::BruteForceMatcher_GPU<Hamming> descriptorMatcher;
+    // matcher = cv::cuda::DescriptorMatcher::createBFMatcher(cv::NORM_HAMMING);
 
     // Keypoint for current_target_image and camera_image
-    vector<KeyPoint> keys_camera_image;
+    gpu::GpuMat keys_camera_image;
+    vector<KeyPoint> keys_camera_image_std;
 
     // Descriptor for current_target_image and camera_image
-    Mat desc_camera_image;
+    gpu::GpuMat desc_camera_image;
 
     for(;;) {
 
@@ -329,8 +346,12 @@ int main(int argc, char *argv[])
         if ( ++frame_num < num_to_skip )
             continue;
 
+        gpu::GpuMat current_image(camera_image);
+
         try {
-            b->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
+            // b->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
+            b(current_image, gpu::GpuMat(), keys_camera_image, desc_camera_image);
+            b.downloadKeyPoints(keys_camera_image, keys_camera_image_std);
         }
         catch (Exception& e) {
             continue;
@@ -344,13 +365,15 @@ int main(int argc, char *argv[])
         vector<vector<DMatch>> cum_matches;
 
         for(int i=0; i < target_images.size(); i++) {
-            vector<DMatch> matches;
-
+            // vector<DMatch> matches;
+            vector<vector<DMatch>> matches;
             try {
 
                 try {
 
-                    descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
+                    // descriptorMatcher.match(desc_current_target_image[i], desc_camera_image, matches, Mat());
+                    // descriptorMatcher.knnMatch(desc_current_target_image[i], desc_camera_image, matches, 2, false);
+                    gpu_matcher.knnMatch(desc_current_target_image[i], desc_camera_image, matches, 2);
 
                     // Keep best matches only to have a nice drawing.
                     // We sort distance between descriptor matches
@@ -359,25 +382,35 @@ int main(int argc, char *argv[])
                         continue;
                     }
 
-                    Mat index;
-                    int nbMatch=int(matches.size());
-                    Mat tab(nbMatch, 1, CV_32F);
-
-                    for (int i = 0; i<nbMatch; i++)
-                    {
-                        tab.at<float>(i, 0) = matches[i].distance;
-                    }
-
-                    sortIdx(tab, index, SORT_EVERY_COLUMN + SORT_ASCENDING);
-
-                    vector<DMatch> bestMatches;
-
-                    for (int i = 0; i<max_number_matching_points; i++)
-                    {
-                        if (matches[index.at<int>(i, 0)].distance <= detection_threshold*1.5) {
-                            bestMatches.push_back(matches[index.at<int>(i, 0)]);
+                    //matching
+                     std::vector<DMatch> bestMatches;
+                     for(int k = 0; k < min(desc_current_target_image[i].rows-1,(int) matches.size()); k++)
+                        {
+                            if((matches[k][0].distance < 0.6*(matches[k][1].distance)) && ((int) matches[k].size()<=2 && (int) matches[k].size()>0))
+                            {
+                                bestMatches.push_back(matches[k][0]);
+                            }
                         }
-                    }
+
+                    // Mat index;
+                    // int nbMatch=int(matches.size());
+                    // Mat tab(nbMatch, 1, CV_32F);
+
+                    // for (int i = 0; i<nbMatch; i++)
+                    // {
+                    //    tab.at<float>(i, 0) = matches[i].distance;
+                    // }
+
+                    // sortIdx(tab, index, SORT_EVERY_COLUMN + SORT_ASCENDING);
+
+                    // vector<DMatch> bestMatches;
+
+                    //for (int i = 0; i<max_number_matching_points; i++)
+                    //{
+                    //    if (matches[index.at<int>(i, 0)].distance <= detection_threshold*1.5) {
+                    //        bestMatches.push_back(matches[index.at<int>(i, 0)]);
+                    //    }
+                    // }
 
                     cum_matches.push_back(bestMatches);
 
@@ -409,7 +442,7 @@ int main(int argc, char *argv[])
 
             for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
                 // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
-                Point2d c_t = keys_camera_image[it->trainIdx].pt;
+                Point2d c_t = keys_camera_image_std[it->trainIdx].pt;
 
                 point_list_x.push_back(c_t.x);
                 point_list_y.push_back(c_t.y);
