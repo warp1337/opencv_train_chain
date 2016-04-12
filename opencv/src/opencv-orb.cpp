@@ -50,10 +50,12 @@ the use of this software, even if advised of the possibility of such damage.
 #include "opencv2/imgproc/imgproc.hpp"
 #include <opencv2/opencv.hpp>
 #include <vector>
+#include <time.h>
 #include <iostream>
 #include <string>
 #include <algorithm>
 #include <functional>
+#include "boost/date_time/posix_time/posix_time.hpp"
 
 using namespace std;
 using namespace cv;
@@ -84,6 +86,7 @@ vector<Scalar> color_mix() {
     colormix.push_back(Scalar(133, 160, 22));
     // Black
     colormix.push_back(Scalar(0, 0, 0));
+
     return colormix;
 }
 
@@ -147,9 +150,6 @@ vector<Rect> pre_process_contours(Mat input_image, int thresh, RNG rng)
 int main(int argc, char *argv[])
 {
     vector<Scalar> colors;
-    vector<int> winner;
-    vector<Point2d> last_winner;
-    vector<vector<int>> train_list;
     vector<String> target_paths;
     vector<String> target_labels;
 
@@ -164,9 +164,6 @@ int main(int argc, char *argv[])
     int detection_threshold = 0;
     int res_x = 640;
     int res_y = 480;
-
-    int thresh = 150;
-    RNG rng(12345);
 
     String type_descriptor;
     String point_matcher;
@@ -242,18 +239,20 @@ int main(int argc, char *argv[])
     colors = color_mix();
 
     // Fill training list
-    for(int i=0; i < target_paths.size(); i++) {
+    /*
+      for(int i=0; i < target_paths.size(); i++) {
         train_list.push_back({0,0});
         winner.push_back(0);
         last_winner.push_back(Point2d(0,0));
-    }
+      }
+    */
 
     vector<Mat> target_images;
     Ptr<Feature2D> b;
     // This is the standard for OpenCV
     // b = ORB::create(500, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
     // b = ORB::create();
-    b = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
+    b = ORB::create(max_keypoints, 1.2f, 32, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
 
     vector<vector<KeyPoint>> keys_current_target;
     vector<Mat> desc_current_target_image;
@@ -290,15 +289,18 @@ int main(int argc, char *argv[])
     }
 
     descriptorMatcher = DescriptorMatcher::create(point_matcher);
+
     // Keypoint for current_target_image and camera_image
     vector<KeyPoint> keys_camera_image;
+
     // Descriptor for current_target_image and camera_image
     Mat desc_camera_image;
 
     for(;;) {
 
+        boost::posix_time::ptime start = boost::posix_time::microsec_clock::local_time();
+
         cap >> frame;
-        Mat cont = frame.clone();
 
         // Check frames
         if (frame.rows*frame.cols <= 0) {
@@ -306,20 +308,22 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        vector<Rect> rects;
-        rects = pre_process_contours(cont, thresh, rng);
-
-        if (rects.size() < 1){
-            continue;
-        }
-
-        Mat cut = Mat(frame, rects[0]);
+        /*
+         *
+           // No pre-processing for now
+           vector<Rect> rects;
+           rects = pre_process_contours(cont, thresh, rng);
+           if (rects.size() < 1){
+              continue;
+           }
+           Mat cut = Mat(frame, rects[0]);
+        *
+        */
 
         // Convert to grey
-        cvtColor(cut, camera_image, COLOR_BGR2GRAY);
+        cvtColor(frame, camera_image, COLOR_BGR2GRAY);
 
-        namedWindow(":: OTC ORB Detection Cut ::", WINDOW_AUTOSIZE);
-        imshow(":: OTC ORB Detection Cut ::", camera_image);
+        // blur(camera_image, camera_image, Size(3,3));
 
         // Skip first 30 frames in order to compensate color/brightness correction
         if ( ++frame_num < num_to_skip )
@@ -343,29 +347,10 @@ int main(int argc, char *argv[])
             vector<DMatch> matches;
 
             try {
-                if ((point_matcher == "BruteForce-Hamming" || point_matcher == "BruteForce-Hamming(2)") && (b->descriptorType() == CV_32F || b->defaultNorm() <= NORM_L2SQR))
-                {
-                    cout << "**************************************************************************\n";
-                    cout << "It's strange. You should use Hamming distance only for a binary descriptor\n";
-                    cout << "**************************************************************************\n";
-                }
-                if (point_matcher == "FlannBased") {
-                    if(desc_current_target_image[i].type() != CV_32F) {
-                        desc_current_target_image[i].convertTo(desc_current_target_image[i], CV_32F);
-                    }
-                    if(desc_camera_image.type()!= CV_32F) {
-                        desc_camera_image.convertTo(desc_camera_image, CV_32F);
-                    }
-                }
 
                 try {
-                    if (point_matcher == "FlannBased") {
-                        // descriptorMatcherFlann.match(desc_current_target_image[i], desc_camera_image, matches);
-                        cout << "Flann support is disbaled." << endl;
-                        return 0;
-                    } else {
-                        descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
-                    }
+
+                    descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
 
                     // Keep best matches only to have a nice drawing.
                     // We sort distance between descriptor matches
@@ -389,7 +374,9 @@ int main(int argc, char *argv[])
 
                     for (int i = 0; i<max_number_matching_points; i++)
                     {
-                        bestMatches.push_back(matches[index.at<int>(i, 0)]);
+                        if (matches[index.at<int>(i, 0)].distance <= detection_threshold*1.5) {
+                            bestMatches.push_back(matches[index.at<int>(i, 0)]);
+                        }
                     }
 
                     cum_matches.push_back(bestMatches);
@@ -398,7 +385,7 @@ int main(int argc, char *argv[])
                     double raw_distance_sum = 0;
 
                     for (it = bestMatches.begin(); it != bestMatches.end(); it++) {
-                        raw_distance_sum = raw_distance_sum + it->distance;
+                         raw_distance_sum = raw_distance_sum + it->distance;
                     }
 
                     double mean_distance = raw_distance_sum/max_number_matching_points;
@@ -424,19 +411,11 @@ int main(int argc, char *argv[])
                 // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
                 Point2d c_t = keys_camera_image[it->trainIdx].pt;
 
-                vector<int>::iterator it2;
-                it2 = find(train_list[i].begin(), train_list[i].end(), it->trainIdx);
-                if (it2 != train_list[i].end()) {
-                    winner.at(i) = it->trainIdx;
-                    train_list[i].clear();
-                } else {
-                    train_list[i].push_back(it->trainIdx);
-                }
-
                 point_list_x.push_back(c_t.x);
                 point_list_y.push_back(c_t.y);
-                Point2d shift(c_t.x+rects[i].tl().x, c_t.y+rects[i].tl().y );
-                circle(frame, shift, 3.0, colors[i], 1, 1 );
+
+                Point2d current_point(c_t.x, c_t.y );
+                circle(frame, current_point, 3.0, colors[i], 1, 1 );
             }
 
             nth_element(point_list_x.begin(), point_list_x.begin() + point_list_x.size()/2, point_list_x.end());
@@ -445,8 +424,7 @@ int main(int argc, char *argv[])
             int median_x =  point_list_x[point_list_x.size()/2];
             int median_y = point_list_y[point_list_y.size()/2];
 
-            Point2d location(median_x+rects[i].tl().x, median_y+rects[i].tl().y );
-            //Point2d location = Point2d(median_x, median_y);
+            Point2d location = Point2d(median_x, median_y);
 
             if (cum_distance[i] <= detection_threshold) {
                 putText(frame, target_labels[i], location, fontFace, fontScale, colors[i], 2, LINE_AA);
@@ -460,10 +438,17 @@ int main(int argc, char *argv[])
             text_offset_y = text_offset_y+15;
         }
 
-        namedWindow(":: OTC ORB Detection::", WINDOW_AUTOSIZE);
-        imshow(":: OTC ORB Detection::", frame);
+        boost::posix_time::ptime end = boost::posix_time::microsec_clock::local_time();
+        boost::posix_time::time_duration diff = end - start;
+        string string_time = to_string(diff.total_milliseconds());
+        putText(frame, "Delta T: "+string_time+" ms", Point2d(frame.cols-200, 20), fontFace, fontScale, Scalar(255,255,255), 1, LINE_AA);
+
+        namedWindow(":: OTC ORB Detection ::", WINDOW_AUTOSIZE);
+        imshow(":: OTC ORB Detection ::", frame);
 
         if(waitKey(1) >= 0) {
+            destroyAllWindows();
+            cap.release();
             return 0;
         }
     }

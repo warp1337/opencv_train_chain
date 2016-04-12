@@ -14,9 +14,11 @@ ELSE()
         MESSAGE(FATAL_ERROR "OpenCV not found.")
 ENDIF()
 
+FIND_PACKAGE(Boost REQUIRED COMPONENTS system program_options)
+
 SET(CMAKE_BUILD_TYPE Release)
 
-INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
+INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11 -march=core-avx-i -O2")
 
@@ -26,6 +28,7 @@ file(GLOB DUMMY_HEADER_LIST RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} include/*.h src
 add_executable(otc-opencv-surf
         opencv/src/opencv-surf.cpp
         ${DUMMY_HEADER_LIST}
+        ${Boost_LIBRARY_DIRS}
 )
 
 target_link_libraries(otc-opencv-surf
@@ -35,6 +38,7 @@ target_link_libraries(otc-opencv-surf
 add_executable(otc-opencv-orb
         opencv/src/opencv-orb.cpp
         ${DUMMY_HEADER_LIST}
+        ${Boost_LIBRARY_DIRS}
 )
 
 target_link_libraries(otc-opencv-orb
