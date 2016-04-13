@@ -105,25 +105,22 @@ vector<Rect> pre_process_contours(Mat input_image, int thresh, RNG rng)
 
     // Detect edges using Threshold
     threshold(src_gray, threshold_output, thresh, 255, THRESH_BINARY );
-    /// Find contours
+    // Find contours
     findContours(threshold_output, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
 
     // Approximate contours to polygons + get bounding rects and circles
     vector<vector<Point>> contours_poly(contours.size());
     vector<Rect> boundRect(contours.size());
-    // vector<Point2f>center(contours.size());
-    // vector<float>radius(contours.size());
-    // cout << hierarchy.size() << endl;
 
     for( int i = 0; i < contours.size(); i++ )
     {
         approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);
         boundRect[i] = boundingRect(Mat(contours_poly[i]));
-        // minEnclosingCircle((Mat)contours_poly[i],center[i],radius[i]);
     }
 
     // Draw polygonal contour + bonding rects + circles
     Mat drawing = Mat::zeros( threshold_output.size(), CV_8UC3 );
+
     // cout << contours.size() << endl;
     for( int i = 0; i < contours.size(); i++ )
     {
@@ -133,13 +130,10 @@ vector<Rect> pre_process_contours(Mat input_image, int thresh, RNG rng)
                 drawContours(drawing, contours_poly, i, color, 1, 8, vector<Vec4i>(), 0, Point());
                 rectangle( drawing, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
                 rects.push_back(boundRect[i]);
-                // cout << boundRect[i] << endl;
-                // circle( drawing, center[i], (int)radius[i], color, 2, 8, 0 );
             }
         }
     }
 
-    // Show in a window
     namedWindow(":: OTC Contours ::", CV_WINDOW_AUTOSIZE );
     imshow(":: OTC Contours ::", drawing );
 
@@ -170,11 +164,9 @@ int main(int argc, char *argv[])
 
     // Descriptor Matcher
     Ptr<DescriptorMatcher> descriptorMatcher;
-    // FlannBased
-    // FlannBasedMatcher descriptorMatcherFlann(new flann::LshIndexParams(20,10,2));
-    // FlannBasedMatcher descriptorMatcherFlann(new flann::LshIndexParams(5,24,2));
+    FlannBasedMatcher flann_matcher(new cv::flann::LshIndexParams(5,20,2));
 
-    cv::CommandLineParser parser(argc, argv, "{@config |<none>| yaml config file}" "{help h ||}");
+    CommandLineParser parser(argc, argv, "{@config |<none>| yaml config file}" "{help h ||}");
 
     if (parser.has("help"))
     {
@@ -238,21 +230,14 @@ int main(int argc, char *argv[])
 
     colors = color_mix();
 
-    // Fill training list
-    /*
-      for(int i=0; i < target_paths.size(); i++) {
-        train_list.push_back({0,0});
-        winner.push_back(0);
-        last_winner.push_back(Point2d(0,0));
-      }
-    */
-
     vector<Mat> target_images;
     Ptr<Feature2D> b;
+
     // This is the standard for OpenCV
     // b = ORB::create(500, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
-    // b = ORB::create();
-    b = ORB::create(max_keypoints, 1.2f, 32, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
+    //
+
+    b = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
 
     vector<vector<KeyPoint>> keys_current_target;
     vector<Mat> desc_current_target_image;
@@ -273,6 +258,12 @@ int main(int argc, char *argv[])
 
         b->detect(tmp_img, tmp_kp, Mat());
         b->compute(tmp_img, tmp_kp, tmp_dc);
+
+        if(point_matcher == "FlannBased"){
+            if(tmp_dc.type() != CV_8U) {
+                tmp_dc.convertTo(tmp_dc, CV_8U);
+            }
+        }
 
         keys_current_target.push_back(tmp_kp);
         desc_current_target_image.push_back(tmp_dc);
@@ -308,22 +299,8 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        /*
-         *
-           // No pre-processing for now
-           vector<Rect> rects;
-           rects = pre_process_contours(cont, thresh, rng);
-           if (rects.size() < 1){
-              continue;
-           }
-           Mat cut = Mat(frame, rects[0]);
-        *
-        */
-
         // Convert to grey
         cvtColor(frame, camera_image, COLOR_BGR2GRAY);
-
-        // blur(camera_image, camera_image, Size(3,3));
 
         // Skip first 30 frames in order to compensate color/brightness correction
         if ( ++frame_num < num_to_skip )
@@ -345,12 +322,14 @@ int main(int argc, char *argv[])
 
         for(int i=0; i < target_images.size(); i++) {
             vector<DMatch> matches;
-
             try {
-
                 try {
-
-                    descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
+                    if(point_matcher == "FlannBased") {
+                        desc_camera_image.convertTo(desc_camera_image, CV_8U);
+                        flann_matcher.match(desc_current_target_image[i], desc_camera_image, matches);
+                    } else {
+                        descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
+                    }
 
                     // Keep best matches only to have a nice drawing.
                     // We sort distance between descriptor matches
@@ -361,6 +340,7 @@ int main(int argc, char *argv[])
 
                     Mat index;
                     int nbMatch=int(matches.size());
+
                     Mat tab(nbMatch, 1, CV_32F);
 
                     for (int i = 0; i<nbMatch; i++)
@@ -427,21 +407,24 @@ int main(int argc, char *argv[])
             Point2d location = Point2d(median_x, median_y);
 
             if (cum_distance[i] <= detection_threshold) {
-                putText(frame, target_labels[i], location, fontFace, fontScale, colors[i], 2, LINE_AA);
+                putText(frame, target_labels[i], location, fontFace, fontScale,
+                        colors[i], 2, LINE_AA);
 
             }
 
             string label = target_labels[i]+": ";
             string distance_raw = to_string(cum_distance[i]);
 
-            putText(frame, label+distance_raw, Point2d(text_origin, text_offset_y), fontFace, fontScale, colors[i], 1, LINE_AA);
+            putText(frame, label+distance_raw, Point2d(text_origin, text_offset_y),
+                    fontFace, fontScale, colors[i], 1, LINE_AA);
             text_offset_y = text_offset_y+15;
         }
 
         boost::posix_time::ptime end = boost::posix_time::microsec_clock::local_time();
         boost::posix_time::time_duration diff = end - start;
         string string_time = to_string(diff.total_milliseconds());
-        putText(frame, "Delta T: "+string_time+" ms", Point2d(frame.cols-200, 20), fontFace, fontScale, Scalar(255,255,255), 1, LINE_AA);
+        putText(frame, "Delta T: "+string_time+" ms", Point2d(frame.cols-200, 20),
+                fontFace, fontScale, Scalar(255,255,255), 1, LINE_AA);
 
         namedWindow(":: OTC ORB Detection ::", WINDOW_AUTOSIZE);
         imshow(":: OTC ORB Detection ::", frame);
