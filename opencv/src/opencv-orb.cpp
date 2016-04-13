@@ -46,15 +46,16 @@ the use of this software, even if advised of the possibility of such damage.
 
 */
 
+
+#include <vector>
+#include <time.h>
+#include <string>
+#include <iostream>
+
 #include <opencv2/core/utility.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
 #include <opencv2/opencv.hpp>
-#include <vector>
-#include <time.h>
-#include <iostream>
-#include <string>
-#include <algorithm>
-#include <functional>
+
 #include "boost/date_time/posix_time/posix_time.hpp"
 
 using namespace std;
@@ -158,6 +159,7 @@ int main(int argc, char *argv[])
     int detection_threshold = 0;
     int res_x = 640;
     int res_y = 480;
+    bool do_not_draw = false;
 
     String type_descriptor;
     String point_matcher;
@@ -231,23 +233,19 @@ int main(int argc, char *argv[])
     colors = color_mix();
 
     vector<Mat> target_images;
-    Ptr<Feature2D> b;
+    Ptr<Feature2D> orb;
 
-    // This is the standard for OpenCV
-    // b = ORB::create(500, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
-    //
-
-    b = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
-
+    orb = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
     vector<vector<KeyPoint>> keys_current_target;
     vector<Mat> desc_current_target_image;
 
     // Compute Keypoints and Descriptors for all target images
     for(int i=0; i < target_paths.size(); i++){
+
         Mat tmp_img = imread(target_paths[i], IMREAD_GRAYSCALE);
 
         if (tmp_img.rows*tmp_img.cols <= 0) {
-            cout << "Image " << target_paths[i] << " is empty or cannot be found\n";
+            cout << "Image " << target_paths[i] << " is empty or cannot be found" << endl;
             return 0;
         }
 
@@ -256,13 +254,11 @@ int main(int argc, char *argv[])
         vector<KeyPoint> tmp_kp;
         Mat tmp_dc;
 
-        b->detect(tmp_img, tmp_kp, Mat());
-        b->compute(tmp_img, tmp_kp, tmp_dc);
+        orb->detect(tmp_img, tmp_kp, Mat());
+        orb->compute(tmp_img, tmp_kp, tmp_dc);
 
         if(point_matcher == "FlannBased"){
-            if(tmp_dc.type() != CV_8U) {
                 tmp_dc.convertTo(tmp_dc, CV_8U);
-            }
         }
 
         keys_current_target.push_back(tmp_kp);
@@ -270,9 +266,12 @@ int main(int argc, char *argv[])
     }
 
     Mat camera_image, frame;
+
     VideoCapture cap(0);
     cap.set(CV_CAP_PROP_FRAME_WIDTH, res_x);
     cap.set(CV_CAP_PROP_FRAME_HEIGHT, res_y);
+    // cap.set(CV_CAP_PROP_EXPOSURE, 0);
+    // cap.set(CV_CAP_PROP_BRIGHTNESS, 255);
 
     if(!cap.isOpened()) {
         cout << "Camera cannot be opened" << endl;
@@ -289,7 +288,7 @@ int main(int argc, char *argv[])
 
     for(;;) {
 
-        boost::posix_time::ptime start = boost::posix_time::microsec_clock::local_time();
+        boost::posix_time::ptime start_all = boost::posix_time::microsec_clock::local_time();
 
         cap >> frame;
 
@@ -306,12 +305,16 @@ int main(int argc, char *argv[])
         if ( ++frame_num < num_to_skip )
             continue;
 
+        boost::posix_time::ptime start_detect = boost::posix_time::microsec_clock::local_time();
+
         try {
-            b->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
+            orb->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
         }
         catch (Exception& e) {
             continue;
         }
+
+        boost::posix_time::ptime end_detect = boost::posix_time::microsec_clock::local_time();
 
         if (desc_camera_image.rows < 1 || desc_camera_image.cols < 1) {
             continue;
@@ -320,56 +323,67 @@ int main(int argc, char *argv[])
         vector<double> cum_distance;
         vector<vector<DMatch>> cum_matches;
 
+        boost::posix_time::ptime start_match = boost::posix_time::microsec_clock::local_time();
+
         for(int i=0; i < target_images.size(); i++) {
             vector<DMatch> matches;
             try {
+
                 try {
-                    if(point_matcher == "FlannBased") {
-                        desc_camera_image.convertTo(desc_camera_image, CV_8U);
-                        flann_matcher.match(desc_current_target_image[i], desc_camera_image, matches);
-                    } else {
-                        descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
-                    }
 
-                    // Keep best matches only to have a nice drawing.
-                    // We sort distance between descriptor matches
-                    if (int(matches.size()) <= max_number_matching_points) {
-                        cout << "Not enough matches: " << matches.size() << endl;
-                        continue;
-                    }
+                    if(!desc_current_target_image[i].empty() && !desc_camera_image.empty()) {
 
-                    Mat index;
-                    int nbMatch=int(matches.size());
-
-                    Mat tab(nbMatch, 1, CV_32F);
-
-                    for (int i = 0; i<nbMatch; i++)
-                    {
-                        tab.at<float>(i, 0) = matches[i].distance;
-                    }
-
-                    sortIdx(tab, index, SORT_EVERY_COLUMN + SORT_ASCENDING);
-
-                    vector<DMatch> bestMatches;
-
-                    for (int i = 0; i<max_number_matching_points; i++)
-                    {
-                        if (matches[index.at<int>(i, 0)].distance <= detection_threshold*1.5) {
-                            bestMatches.push_back(matches[index.at<int>(i, 0)]);
+                        if(point_matcher == "FlannBased") {
+                            desc_camera_image.convertTo(desc_camera_image, CV_8U);
+                            flann_matcher.match(desc_current_target_image[i], desc_camera_image, matches);
+                        } else {
+                            descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
                         }
+
+                        // Keep best matches only to have a nice drawing.
+                        // We sort distance between descriptor matches
+                        if (matches.size() <= max_number_matching_points) {
+                            cout << "Not enough matches: " << matches.size() << endl;
+                            continue;
+
+                        }
+
+                        Mat index;
+                        int nbMatch=int(matches.size());
+
+                        Mat tab(nbMatch, 1, CV_32F);
+
+                        for (int i = 0; i<nbMatch; i++)
+                        {
+                            tab.at<float>(i, 0) = matches[i].distance;
+                        }
+
+                        sortIdx(tab, index, SORT_EVERY_COLUMN + SORT_ASCENDING);
+
+                        vector<DMatch> bestMatches;
+
+                        for (int i = 0; i<max_number_matching_points; i++)
+                        {
+                            if (matches[index.at<int>(i, 0)].distance <= detection_threshold*1.5) {
+                                bestMatches.push_back(matches[index.at<int>(i, 0)]);
+                            }
+                        }
+
+                        cum_matches.push_back(bestMatches);
+
+                        vector<DMatch>::iterator it;
+                        double raw_distance_sum = 0;
+
+                        for (it = bestMatches.begin(); it != bestMatches.end(); it++) {
+                             raw_distance_sum = raw_distance_sum + it->distance;
+                        }
+
+                        double mean_distance = raw_distance_sum/max_number_matching_points;
+                        cum_distance.push_back(mean_distance);
+
+                    } else {
+                        do_not_draw = true;
                     }
-
-                    cum_matches.push_back(bestMatches);
-
-                    vector<DMatch>::iterator it;
-                    double raw_distance_sum = 0;
-
-                    for (it = bestMatches.begin(); it != bestMatches.end(); it++) {
-                         raw_distance_sum = raw_distance_sum + it->distance;
-                    }
-
-                    double mean_distance = raw_distance_sum/max_number_matching_points;
-                    cum_distance.push_back(mean_distance);
                 }
                 catch (Exception& e) {
                     cout << "Cumulative distance cannot be computed, next iteration" << endl;
@@ -380,51 +394,72 @@ int main(int argc, char *argv[])
             }
         }
 
+        boost::posix_time::ptime end_match = boost::posix_time::microsec_clock::local_time();
+
         text_offset_y = 20;
 
-        for(int i=0; i < target_images.size(); i++) {
-            vector<DMatch>::iterator it;
-            vector<int> point_list_x;
-            vector<int> point_list_y;
+        if (do_not_draw == false) {
 
-            for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
-                // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
-                Point2d c_t = keys_camera_image[it->trainIdx].pt;
+            for(int i=0; i < target_images.size(); i++) {
 
-                point_list_x.push_back(c_t.x);
-                point_list_y.push_back(c_t.y);
+                vector<DMatch>::iterator it;
+                vector<int> point_list_x;
+                vector<int> point_list_y;
 
-                Point2d current_point(c_t.x, c_t.y );
-                circle(frame, current_point, 3.0, colors[i], 1, 1 );
+                for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
+                    // Point2d k_t = keys_current_target[i][it->queryIdx].pt;
+                    Point2d c_t = keys_camera_image[it->trainIdx].pt;
+
+                    point_list_x.push_back(c_t.x);
+                    point_list_y.push_back(c_t.y);
+
+                    Point2d current_point(c_t.x, c_t.y );
+                    circle(frame, current_point, 3.0, colors[i], 1, 1 );
+                }
+
+                nth_element(point_list_x.begin(), point_list_x.begin() + point_list_x.size()/2, point_list_x.end());
+                nth_element(point_list_y.begin(), point_list_y.begin() + point_list_y.size()/2, point_list_y.end());
+
+                int median_x =  point_list_x[point_list_x.size()/2];
+                int median_y = point_list_y[point_list_y.size()/2];
+
+                Point2d location = Point2d(median_x, median_y);
+
+                if (cum_distance[i] <= detection_threshold) {
+                    putText(frame, target_labels[i], location, fontFace, fontScale,
+                            colors[i], 2, LINE_AA);
+
+                }
+
+                string label = target_labels[i]+": ";
+                string distance_raw = to_string(cum_distance[i]);
+
+                putText(frame, label+distance_raw, Point2d(text_origin, text_offset_y),
+                        fontFace, fontScale, colors[i], 1, LINE_AA);
+                text_offset_y = text_offset_y+15;
             }
 
-            nth_element(point_list_x.begin(), point_list_x.begin() + point_list_x.size()/2, point_list_x.end());
-            nth_element(point_list_y.begin(), point_list_y.begin() + point_list_y.size()/2, point_list_y.end());
-
-            int median_x =  point_list_x[point_list_x.size()/2];
-            int median_y = point_list_y[point_list_y.size()/2];
-
-            Point2d location = Point2d(median_x, median_y);
-
-            if (cum_distance[i] <= detection_threshold) {
-                putText(frame, target_labels[i], location, fontFace, fontScale,
-                        colors[i], 2, LINE_AA);
-
-            }
-
-            string label = target_labels[i]+": ";
-            string distance_raw = to_string(cum_distance[i]);
-
-            putText(frame, label+distance_raw, Point2d(text_origin, text_offset_y),
-                    fontFace, fontScale, colors[i], 1, LINE_AA);
-            text_offset_y = text_offset_y+15;
         }
 
-        boost::posix_time::ptime end = boost::posix_time::microsec_clock::local_time();
-        boost::posix_time::time_duration diff = end - start;
-        string string_time = to_string(diff.total_milliseconds());
-        putText(frame, "Delta T: "+string_time+" ms", Point2d(frame.cols-200, 20),
+        boost::posix_time::ptime end_all = boost::posix_time::microsec_clock::local_time();
+
+        boost::posix_time::time_duration diff_all = end_all - start_all;
+        boost::posix_time::time_duration diff_detect = end_detect - start_detect;
+        boost::posix_time::time_duration diff_match = end_match - start_match;
+
+        string string_time_all = to_string(diff_all.total_milliseconds());
+        string string_time_detect = to_string(diff_detect.total_milliseconds());
+        string string_time_match = to_string(diff_match.total_milliseconds());
+
+
+        putText(frame, "Delta T(Detect): "+string_time_detect+" ms", Point2d(frame.cols-220, 20),
                 fontFace, fontScale, Scalar(255,255,255), 1, LINE_AA);
+
+        putText(frame, "Delta T(Match): "+string_time_match+" ms", Point2d(frame.cols-220, 40),
+                fontFace, fontScale, Scalar(34, 126, 230), 1, LINE_AA);
+
+        putText(frame, "Delta T(Full): "+string_time_all+" ms", Point2d(frame.cols-220, 60),
+                fontFace, fontScale, Scalar(219, 152, 52), 1, LINE_AA);
 
         namedWindow(":: OTC ORB Detection ::", WINDOW_AUTOSIZE);
         imshow(":: OTC ORB Detection ::", frame);

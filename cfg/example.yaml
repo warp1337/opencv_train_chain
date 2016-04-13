@@ -11,7 +11,7 @@ labels:
  - "NAO"
  - "Flobi"
 
-maxkeypoints: 1000
+maxkeypoints: 2000
 
 maxmatches: 10
 
