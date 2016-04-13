@@ -11,9 +11,9 @@ labels:
  - "NAO"
  - "Flobi"
 
-maxkeypoints: 30000
+maxkeypoints: 1500
 
-maxmatches: 60
+maxmatches: 50
 
 detectionthreshold: 30
 

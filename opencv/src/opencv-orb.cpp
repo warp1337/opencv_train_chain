@@ -440,13 +440,13 @@ int main(int argc, char *argv[])
             vector<Point2d> scene;
 
             vector<DMatch>::iterator it;
-            int idx = 0;
+            // int idx = 0;
             for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
-                if (idx <= 50) {
+                // if (idx <= 50) {
                     obj.push_back(keys_current_target[i][it->queryIdx].pt);
                     scene.push_back(keys_camera_image[it->trainIdx].pt);
-                }
-                idx++;
+                // }
+                // idx++;
             }
 
             if( !obj.empty() && !scene.empty() && cum_matches[i].size() >= 4) {
@@ -461,7 +461,6 @@ int main(int argc, char *argv[])
                 obj_corners[3] = Point(0, target_images[i].rows);
 
                 vector<Point2d> scene_corners(4);
-
                 vector<Point2f> scene_corners_f(4);
 
                 perspectiveTransform(obj_corners, scene_corners, H);
@@ -471,7 +470,6 @@ int main(int argc, char *argv[])
                 }
 
                 cv::TermCriteria termCriteria = cv::TermCriteria(cv::TermCriteria::MAX_ITER| cv::TermCriteria::EPS, 20, 0.01);
-
                 cornerSubPix(camera_image, scene_corners_f, Size(10,10), Size(-1,-1), termCriteria);
 
                 //-- Draw lines between the corners (the mapped object in the scene - image_2 )
