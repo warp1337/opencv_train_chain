@@ -147,14 +147,18 @@ int main(int argc, char *argv[])
     vector<Scalar> colors;
     vector<String> target_paths;
     vector<String> target_labels;
+    vector<Mat> target_images;
+    Ptr<Feature2D> orb;
+    vector<vector<KeyPoint>> keys_current_target;
+    vector<Mat> desc_current_target_image;
 
-    int max_keypoints;
-    int max_number_matching_points;
     const int fontFace = FONT_HERSHEY_PLAIN;
     const double fontScale = 1;
-    int frame_num = 0;
     const int num_to_skip = 60;
     const int text_origin = 10;
+    int max_keypoints = 0;
+    int max_number_matching_points = 0;
+    int frame_num = 0;
     int text_offset_y = 20;
     int detection_threshold = 0;
     int res_x = 640;
@@ -164,10 +168,11 @@ int main(int argc, char *argv[])
     String type_descriptor;
     String point_matcher;
 
-    // Descriptor Matcher
+    Mat camera_image, frame;
+    VideoCapture cap(0);
+
     Ptr<DescriptorMatcher> descriptorMatcher;
     FlannBasedMatcher flann_matcher(new cv::flann::LshIndexParams(5,20,2));
-
     CommandLineParser parser(argc, argv, "{@config |<none>| yaml config file}" "{help h ||}");
 
     if (parser.has("help"))
@@ -204,8 +209,7 @@ int main(int argc, char *argv[])
         FileNodeIterator it = targets.begin(), it_end = targets.end();
         int idx = 0;
 
-        for( ; it != it_end; ++it, idx++ )
-        {
+        for( ; it != it_end; ++it, idx++ ) {
             cout << "Target " << idx << " --> ";
             cout << (String)(*it) << endl;
             target_paths.push_back((String)(*it));
@@ -220,8 +224,7 @@ int main(int argc, char *argv[])
         FileNodeIterator it2 = labels.begin(), it_end2 = labels.end();
         int idx2 = 0;
 
-        for( ; it2 != it_end2; ++it2, idx2++ )
-        {
+        for( ; it2 != it_end2; ++it2, idx2++ ) {
             cout << "Label  " << idx2 << " --> ";
             cout << (String)(*it2) << endl;
             target_labels.push_back((String)(*it2));
@@ -232,15 +235,14 @@ int main(int argc, char *argv[])
 
     colors = color_mix();
 
-    vector<Mat> target_images;
-    Ptr<Feature2D> orb;
+    cap.set(CV_CAP_PROP_FRAME_WIDTH, res_x);
+    cap.set(CV_CAP_PROP_FRAME_HEIGHT, res_y);
 
+    descriptorMatcher = DescriptorMatcher::create(point_matcher);
     orb = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
-    vector<vector<KeyPoint>> keys_current_target;
-    vector<Mat> desc_current_target_image;
 
     // Compute Keypoints and Descriptors for all target images
-    for(int i=0; i < target_paths.size(); i++){
+    for(int i=0; i < target_paths.size(); i++) {
 
         Mat tmp_img = imread(target_paths[i], IMREAD_GRAYSCALE);
 
@@ -257,28 +259,18 @@ int main(int argc, char *argv[])
         orb->detect(tmp_img, tmp_kp, Mat());
         orb->compute(tmp_img, tmp_kp, tmp_dc);
 
-        if(point_matcher == "FlannBased"){
-                tmp_dc.convertTo(tmp_dc, CV_8U);
+        if(point_matcher == "FlannBased") {
+            tmp_dc.convertTo(tmp_dc, CV_8U);
         }
 
         keys_current_target.push_back(tmp_kp);
         desc_current_target_image.push_back(tmp_dc);
     }
 
-    Mat camera_image, frame;
-
-    VideoCapture cap(0);
-    cap.set(CV_CAP_PROP_FRAME_WIDTH, res_x);
-    cap.set(CV_CAP_PROP_FRAME_HEIGHT, res_y);
-    // cap.set(CV_CAP_PROP_EXPOSURE, 0);
-    // cap.set(CV_CAP_PROP_BRIGHTNESS, 255);
-
     if(!cap.isOpened()) {
         cout << "Camera cannot be opened" << endl;
         return -1;
     }
-
-    descriptorMatcher = DescriptorMatcher::create(point_matcher);
 
     // Keypoint for current_target_image and camera_image
     vector<KeyPoint> keys_camera_image;
@@ -375,7 +367,7 @@ int main(int argc, char *argv[])
                         double raw_distance_sum = 0;
 
                         for (it = bestMatches.begin(); it != bestMatches.end(); it++) {
-                             raw_distance_sum = raw_distance_sum + it->distance;
+                            raw_distance_sum = raw_distance_sum + it->distance;
                         }
 
                         double mean_distance = raw_distance_sum/max_number_matching_points;
@@ -400,7 +392,7 @@ int main(int argc, char *argv[])
 
         if (do_not_draw == false) {
 
-            for(int i=0; i < target_images.size(); i++) {
+            for (int i=0; i < target_images.size(); i++) {
 
                 vector<DMatch>::iterator it;
                 vector<int> point_list_x;
@@ -439,6 +431,55 @@ int main(int argc, char *argv[])
                 text_offset_y = text_offset_y+15;
             }
 
+        }
+
+        for (int i=0; i < target_images.size(); i++) {
+
+            //-- localize the object
+            vector<Point2d> obj;
+            vector<Point2d> scene;
+
+            vector<DMatch>::iterator it;
+            int idx = 0;
+            for (it = cum_matches[i].begin(); it != cum_matches[i].end(); it++) {
+                if (idx <= 50) {
+                    obj.push_back(keys_current_target[i][it->queryIdx].pt);
+                    scene.push_back(keys_camera_image[it->trainIdx].pt);
+                }
+                idx++;
+            }
+
+            if( !obj.empty() && !scene.empty() && cum_matches[i].size() >= 4) {
+
+                Mat H = findHomography(obj, scene, cv::RANSAC);
+
+                //-- get the corners from the object to be detected
+                vector<cv::Point2d> obj_corners(4);
+                obj_corners[0] = Point(0, 0);
+                obj_corners[1] = Point(target_images[i].cols, 0);
+                obj_corners[2] = Point(target_images[i].cols, target_images[i].rows);
+                obj_corners[3] = Point(0, target_images[i].rows);
+
+                vector<Point2d> scene_corners(4);
+
+                vector<Point2f> scene_corners_f(4);
+
+                perspectiveTransform(obj_corners, scene_corners, H);
+
+                for (int i=0; i < scene_corners.size(); i++) {
+                    scene_corners_f[i] = Point2f(scene_corners[i]);
+                }
+
+                cv::TermCriteria termCriteria = cv::TermCriteria(cv::TermCriteria::MAX_ITER| cv::TermCriteria::EPS, 20, 0.01);
+
+                cornerSubPix(camera_image, scene_corners_f, Size(10,10), Size(-1,-1), termCriteria);
+
+                //-- Draw lines between the corners (the mapped object in the scene - image_2 )
+                line(frame, scene_corners[0], scene_corners[1], Scalar(0,255,0), 4 );
+                line(frame, scene_corners[1], scene_corners[2], Scalar(0,255,0), 4 );
+                line(frame, scene_corners[2], scene_corners[3], Scalar(0,255,0), 4 );
+                line(frame, scene_corners[3], scene_corners[0], Scalar(0,255,0), 4 );
+            }
         }
 
         boost::posix_time::ptime end_all = boost::posix_time::microsec_clock::local_time();

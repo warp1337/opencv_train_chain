@@ -11,18 +11,17 @@ labels:
  - "NAO"
  - "Flobi"
 
-maxkeypoints: 2000
+maxkeypoints: 30000
 
-maxmatches: 10
+maxmatches: 60
 
 detectionthreshold: 30
 
-resolutionx: 1280
+resolutionx: 1920
 
-resolutiony: 960
+resolutiony: 1080
 
 # Allowed values: BruteForce-Hamming(2), BruteForce-Hamming, FlannBased
 matcher: FlannBased
 
 keypointalgo: ORB
-
