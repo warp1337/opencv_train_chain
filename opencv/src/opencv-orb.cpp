@@ -321,6 +321,7 @@ int main(int argc, char *argv[])
             orb->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
         }
         catch (Exception& e) {
+            cout << "E >>> ORB fail" << "\n";
             continue;
         }
 
