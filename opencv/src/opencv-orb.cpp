@@ -295,7 +295,11 @@ int main(int argc, char *argv[])
 
         boost::posix_time::ptime start_all = boost::posix_time::microsec_clock::local_time();
 
+        boost::posix_time::ptime start_cap = boost::posix_time::microsec_clock::local_time();
+
         cap >> frame;
+
+        boost::posix_time::ptime end_cap = boost::posix_time::microsec_clock::local_time();
 
         // Check frames
         if (frame.rows*frame.cols <= 0) {
@@ -508,19 +512,24 @@ int main(int argc, char *argv[])
         boost::posix_time::time_duration diff_all = end_all - start_all;
         boost::posix_time::time_duration diff_detect = end_detect - start_detect;
         boost::posix_time::time_duration diff_match = end_match - start_match;
+        boost::posix_time::time_duration diff_cap = end_cap - start_cap;
+
 
         string string_time_all = to_string(diff_all.total_milliseconds());
         string string_time_detect = to_string(diff_detect.total_milliseconds());
         string string_time_match = to_string(diff_match.total_milliseconds());
+        string string_time_cap = to_string(diff_cap.total_milliseconds());
 
+        putText(frame, "Delta T (Capture): "+string_time_cap+" ms", Point2d(frame.cols-220, 20),
+                fontFace, fontScale, Scalar(156, 188, 26), 1, LINE_AA);
 
-        putText(frame, "Delta T(Detect): "+string_time_detect+" ms", Point2d(frame.cols-220, 20),
+        putText(frame, "Delta T (Detect): "+string_time_detect+" ms", Point2d(frame.cols-220, 40),
                 fontFace, fontScale, Scalar(255,255,255), 1, LINE_AA);
 
-        putText(frame, "Delta T(Match): "+string_time_match+" ms", Point2d(frame.cols-220, 40),
+        putText(frame, "Delta T (Match): "+string_time_match+" ms", Point2d(frame.cols-220, 60),
                 fontFace, fontScale, Scalar(34, 126, 230), 1, LINE_AA);
 
-        putText(frame, "Delta T(Full): "+string_time_all+" ms", Point2d(frame.cols-220, 60),
+        putText(frame, "Delta T (Full): "+string_time_all+" ms", Point2d(frame.cols-220, 80),
                 fontFace, fontScale, Scalar(219, 152, 52), 1, LINE_AA);
 
         namedWindow(":: OTC ORB Detection ::", WINDOW_AUTOSIZE);
