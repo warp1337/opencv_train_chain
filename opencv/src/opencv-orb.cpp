@@ -394,6 +394,7 @@ int main(int argc, char *argv[])
 
                     } else {
                         do_not_draw = true;
+                        cout << "E >>> Descriptors are empty" << endl;
                     }
                 }
                 catch (Exception& e) {

@@ -1,15 +1,15 @@
 %YAML:1.0
 targets:
-# - /home/nao/dev/sample_images/automatica/billy.jpg
+ - /home/nao/dev/sample_images/automatica/billy.jpg
  - /home/nao/dev//sample_images/automatica/hands.jpg
-# - /home/nao/dev//sample_images/automatica/nao.jpg
-# - /home/nao/dev//sample_images/automatica/flobi.jpg
+ - /home/nao/dev//sample_images/automatica/nao.jpg
+ - /home/nao/dev//sample_images/automatica/flobi.jpg
 
 labels:
-# - "Billy"
+ - "Billy"
  - "Hands"
-# - "NAO"
-# - "Flobi"
+ - "NAO"
+ - "Flobi"
 
 maxkeypoints: 1500
 
@@ -17,9 +17,9 @@ maxmatches: 12
 
 detectionthreshold: 25
 
-resolutionx: 800
+resolutionx: 1600
 
-resolutiony: 600
+resolutiony: 1200
 
 # Allowed values: BruteForce-Hamming(2), BruteForce-Hamming, FlannBased
 matcher:  FlannBased
