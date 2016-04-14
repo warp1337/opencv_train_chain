@@ -45,16 +45,6 @@ target_link_libraries(otc-opencv-orb
         ${OpenCV_LIBRARIES}
 )
 
-add_executable(otc-orb-test
-        opencv/src/orb-test.cpp
-        ${DUMMY_HEADER_LIST}
-        ${Boost_LIBRARY_DIRS}
-)
-
-target_link_libraries(otc-orb-test
-        ${OpenCV_LIBRARIES}
-)
-
 set_property(TARGET otc-opencv-surf PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
 set_target_properties(otc-opencv-surf PROPERTIES COMPILE_FLAGS -DCMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
 
