@@ -47,15 +47,21 @@ the use of this software, even if advised of the possibility of such damage.
 */
 
 
+// STD
 #include <vector>
 #include <time.h>
 #include <string>
 #include <iostream>
 
+// OPENCV
 #include <opencv2/core/utility.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
 #include <opencv2/opencv.hpp>
 
+// CUDA
+#include <opencv2/cudafeatures2d.hpp>
+
+//BOOST
 #include "boost/date_time/posix_time/posix_time.hpp"
 
 using namespace std;
@@ -148,13 +154,26 @@ vector<Rect> pre_process_contours(Mat input_image, int thresh, RNG rng)
 
 int main(int argc, char *argv[])
 {
+
+    cout << ">>> CUDA Enabled Devices --> " << cuda::getCudaEnabledDeviceCount() << endl;
+
+    if (cuda::getCudaEnabledDeviceCount() == 0)
+    {
+        cout << "E >>> No CUDA Enabled Devices" << endl;
+        return -1;
+    } else {
+        cuda::printShortCudaDeviceInfo(cuda::getDevice());
+    }
+
     vector<Scalar> colors;
     vector<String> target_paths;
     vector<String> target_labels;
     vector<Mat> target_images;
-    Ptr<Feature2D> orb;
+    // Ptr<Feature2D> orb;
     vector<vector<KeyPoint>> keys_current_target;
-    vector<Mat> desc_current_target_image;
+    // vector<Mat> desc_current_target_image;
+    // vector<cuda::GpuMat> cuda_keys_current_target;
+    vector<cuda::GpuMat> cuda_desc_current_target_image;
 
     const int fontFace = FONT_HERSHEY_PLAIN;
     const double fontScale = 1;
@@ -177,8 +196,8 @@ int main(int argc, char *argv[])
     Mat camera_image, frame;
     VideoCapture cap(0);
 
-    Ptr<DescriptorMatcher> descriptorMatcher;
-    FlannBasedMatcher flann_matcher(new cv::flann::LshIndexParams(5,20,2));
+    // Ptr<DescriptorMatcher> descriptorMatcher;
+    // FlannBasedMatcher flann_matcher(new cv::flann::LshIndexParams(5,20,2));
     CommandLineParser parser(argc, argv, "{@config |<none>| yaml config file}" "{help h ||}");
 
     if (parser.has("help"))
@@ -220,6 +239,7 @@ int main(int argc, char *argv[])
 
         FileNode targets = fs["targets"];
         FileNodeIterator it = targets.begin(), it_end = targets.end();
+
         int idx = 0;
 
         for( ; it != it_end; ++it, idx++ ) {
@@ -230,15 +250,16 @@ int main(int argc, char *argv[])
 
         if(idx > 5) {
             cout << "E >>> Sorry, only 5 targets are allowed (for now)" << endl;
-            return 0;
+            return -1;
         }
 
         FileNode labels = fs["labels"];
         FileNodeIterator it2 = labels.begin(), it_end2 = labels.end();
-        int idx2 = 0;
 
-        for( ; it2 != it_end2; ++it2, idx2++ ) {
-            cout << ">>> Label  " << idx2 << " --> ";
+        int idy = 0;
+
+        for( ; it2 != it_end2; ++it2, idy++ ) {
+            cout << ">>> Label  " << idy << " --> ";
             cout << (String)(*it2) << endl;
             target_labels.push_back((String)(*it2));
         }
@@ -251,33 +272,48 @@ int main(int argc, char *argv[])
     cap.set(CV_CAP_PROP_FRAME_WIDTH, res_x);
     cap.set(CV_CAP_PROP_FRAME_HEIGHT, res_y);
 
-    descriptorMatcher = DescriptorMatcher::create(point_matcher);
-    orb = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
+    // descriptorMatcher = DescriptorMatcher::create(point_matcher);
+    // orb = ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
+
+    Ptr<cuda::ORB> cuda_orb = cuda::ORB::create(max_keypoints, 1.2f, 8, 31, 0, 2, ORB::HARRIS_SCORE, 31, 20);
+    Ptr<cuda::DescriptorMatcher> cuda_bf_matcher = cv::cuda::DescriptorMatcher::createBFMatcher(cv::NORM_HAMMING);
 
     // Compute Keypoints and Descriptors for all target images
     for(int i=0; i < target_paths.size(); i++) {
 
         Mat tmp_img = imread(target_paths[i], IMREAD_GRAYSCALE);
+        cuda::GpuMat cuda_tmp_img(tmp_img);
 
         if (tmp_img.rows*tmp_img.cols <= 0) {
             cout << "E >>> Image " << target_paths[i] << " is empty or cannot be found" << endl;
-            return 0;
+            return -1;
         }
 
         target_images.push_back(tmp_img);
 
         vector<KeyPoint> tmp_kp;
-        Mat tmp_dc;
+        // Mat tmp_dc;
 
-        orb->detect(tmp_img, tmp_kp, Mat());
-        orb->compute(tmp_img, tmp_kp, tmp_dc);
+        // cuda::GpuMat tmp_cuda_kp;
+        cuda::GpuMat tmp_cuda_dc;
+
+        // orb->detect(tmp_img, tmp_kp, Mat());
+        // orb->compute(tmp_img, tmp_kp, tmp_dc);
+
+        cuda_orb->detectAndCompute(cuda_tmp_img, cuda::GpuMat(), tmp_kp, tmp_cuda_dc);
 
         if(point_matcher == "FlannBased") {
-            tmp_dc.convertTo(tmp_dc, CV_8U);
+            // tmp_dc.convertTo(tmp_dc, CV_8U);
+            cout << "E >>> Flann is not implemented with GPU support" << endl;
+            return -1;
         }
 
         keys_current_target.push_back(tmp_kp);
-        desc_current_target_image.push_back(tmp_dc);
+        // desc_current_target_image.push_back(tmp_dc);
+
+        // cuda_keys_current_target.push_back(tmp_cuda_kp);
+        cuda_desc_current_target_image.push_back(tmp_cuda_dc);
+
     }
 
     if(!cap.isOpened()) {
@@ -287,9 +323,11 @@ int main(int argc, char *argv[])
 
     // Keypoint for current_target_image and camera_image
     vector<KeyPoint> keys_camera_image;
+    // cuda::GpuMat cuda_keys_camera_image;
 
     // Descriptor for current_target_image and camera_image
-    Mat desc_camera_image;
+    // Mat desc_camera_image;
+    cuda::GpuMat cuda_desc_camera_image;
 
     for(;;) {
 
@@ -308,7 +346,7 @@ int main(int argc, char *argv[])
         }
 
         // Convert to grey
-        cvtColor(frame, camera_image, COLOR_BGR2GRAY);
+        cvtColor (frame, camera_image, COLOR_BGR2GRAY);
 
         // Skip first 30 frames in order to compensate color/brightness correction
         if ( ++frame_num < num_to_skip ) {
@@ -317,18 +355,21 @@ int main(int argc, char *argv[])
 
         boost::posix_time::ptime start_detect = boost::posix_time::microsec_clock::local_time();
 
+        cuda::GpuMat cuda_tmp_img(camera_image);
+
         try {
-            orb->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
+            // orb->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
+            cuda_orb->detectAndCompute(cuda_tmp_img, cuda::GpuMat(), keys_camera_image, cuda_desc_camera_image);
         }
         catch (Exception& e) {
-            cout << "E >>> ORB fail" << "\n";
+            cout << "E >>> ORB fail O_O" << "\n";
             continue;
         }
 
         boost::posix_time::ptime end_detect = boost::posix_time::microsec_clock::local_time();
 
-        if (keys_camera_image.size() < max_keypoints/3) {
-            cout << "E >>> Could not derive enough keypoints: " << keys_camera_image.size() << endl;
+        if (keys_camera_image.empty()) {
+            cout << "E >>> Could not derive enough keypoints: " << endl;
             continue;
         }
 
@@ -343,13 +384,14 @@ int main(int argc, char *argv[])
 
                 try {
 
-                    if(!desc_current_target_image[i].empty() && !desc_camera_image.empty()) {
+                    if(!cuda_desc_current_target_image[i].empty() && !cuda_desc_camera_image.empty()) {
 
                         if(point_matcher == "FlannBased") {
-                            desc_camera_image.convertTo(desc_camera_image, CV_8U);
-                            flann_matcher.match(desc_current_target_image[i], desc_camera_image, matches);
+                            // desc_camera_image.convertTo(desc_camera_image, CV_8U);
+                            // flann_matcher.match(cuda_desc_current_target_image[i], desc_camera_image, matches);
                         } else {
-                            descriptorMatcher->match(desc_current_target_image[i], desc_camera_image, matches, Mat());
+                            // descriptorMatcher->match(cuda_desc_current_target_image[i], desc_camera_image, matches, Mat());
+                            cuda_bf_matcher->match(cuda_desc_current_target_image[i], cuda_desc_camera_image, matches);
                         }
 
                         // Keep best matches only to have a nice drawing.
@@ -515,7 +557,6 @@ int main(int argc, char *argv[])
         boost::posix_time::time_duration diff_detect = end_detect - start_detect;
         boost::posix_time::time_duration diff_match = end_match - start_match;
         boost::posix_time::time_duration diff_cap = end_cap - start_cap;
-
 
         string string_time_all = to_string(diff_all.total_milliseconds());
         string string_time_detect = to_string(diff_detect.total_milliseconds());
