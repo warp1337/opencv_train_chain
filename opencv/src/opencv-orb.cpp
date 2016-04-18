@@ -60,6 +60,7 @@ the use of this software, even if advised of the possibility of such damage.
 
 // CUDA
 #include <opencv2/cudafeatures2d.hpp>
+#include <opencv2/cudaimgproc.hpp>
 
 //BOOST
 #include "boost/date_time/posix_time/posix_time.hpp"
@@ -193,7 +194,8 @@ int main(int argc, char *argv[])
     String point_matcher;
     String draw_homography;
 
-    Mat camera_image, frame;
+    Mat frame;
+    cuda::GpuMat cuda_camera_tmp_img;
     VideoCapture cap(0);
 
     // Ptr<DescriptorMatcher> descriptorMatcher;
@@ -212,7 +214,7 @@ int main(int argc, char *argv[])
         fs["keypointalgo"] >> type_descriptor;
         cout << ">>> Keypoint Descriptor --> " << type_descriptor  << endl;
 
-        fs["matcher"] >> point_matcher;
+        point_matcher = "BruteForce (Hamming)";
         cout << ">>> Matching Algorithm --> " << point_matcher  << endl;
 
         fs["maxkeypoints"] >> max_keypoints;
@@ -342,24 +344,24 @@ int main(int argc, char *argv[])
         // Check frames
         if (frame.rows*frame.cols <= 0) {
             cout << "E >>> Camera Image " << " is NULL\n";
-            continue;
+            return -1;
         }
 
-        // Convert to grey
-        cvtColor (frame, camera_image, COLOR_BGR2GRAY);
 
         // Skip first 30 frames in order to compensate color/brightness correction
         if ( ++frame_num < num_to_skip ) {
             continue;
         }
 
-        boost::posix_time::ptime start_detect = boost::posix_time::microsec_clock::local_time();
+        cuda::GpuMat cuda_frame_tmp_img(frame);
+        cuda::cvtColor(cuda_frame_tmp_img, cuda_camera_tmp_img, COLOR_BGR2GRAY);
+        Mat camera_image(cuda_camera_tmp_img);
 
-        cuda::GpuMat cuda_tmp_img(camera_image);
+        boost::posix_time::ptime start_detect = boost::posix_time::microsec_clock::local_time();
 
         try {
             // orb->detectAndCompute(camera_image, Mat(), keys_camera_image, desc_camera_image, false);
-            cuda_orb->detectAndCompute(cuda_tmp_img, cuda::GpuMat(), keys_camera_image, cuda_desc_camera_image);
+            cuda_orb->detectAndCompute(cuda_camera_tmp_img, cuda::GpuMat(), keys_camera_image, cuda_desc_camera_image);
         }
         catch (Exception& e) {
             cout << "E >>> ORB fail O_O" << "\n";

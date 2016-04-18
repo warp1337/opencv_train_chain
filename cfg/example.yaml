@@ -4,15 +4,16 @@ targets:
 # - /home/nao/dev/sample_images/automatica/hands.jpg
  - /home/nao/dev/sample_images/card_hands_full.png
  - /home/nao/dev/sample_images/card_nao_full.png
-# - /home/nao/dev/sample_images/automatica/flobi.jpg
-# - /home/nao/dev/sample_images/bmw_inno/i8.jpg
-# - /home/nao/dev/sample_images/bmw_inno/m550d.jpg
+ - /home/nao/dev/sample_images/card_billy_full.png
+ - /home/nao/dev/sample_images/card_flobi_full.png
+# - /home/nao/dev/sample_images/bmw_inno/active.jpg
+# - /home/nao/dev/sample_images/bmw_inno/4er.jpg
 
 labels:
-# - "Billy"
  - "Hands"
  - "NAO"
-# - "Flobi"
+ - "Billy"
+ - "Flobi"
 # - i8
 # - M550d
 
@@ -20,13 +21,11 @@ maxkeypoints: 2500
 
 maxmatches: 30
 
-detectionthreshold: 50
+detectionthreshold: 45
 
 resolutionx: 1920
 
 resolutiony: 1080
-
-matcher: BruteForce-Hamming
 
 keypointalgo: ORB
 
