@@ -120,7 +120,7 @@ cap.release()
 cv2.destroyAllWindows()
 # Saving training data xml
 xml_tree = ET.ElementTree(xml_structure)
-print ">> Saving dtc-training.xml to --> %s" % data_dir
+print ">> Saving otc-training.xml to --> %s" % data_dir
 xml_tree.write(data_dir+"/otc-training.xml")
 
 
