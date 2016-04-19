@@ -2,6 +2,8 @@
 
 Author: Florian Lier [flier AT techfak.uni-bielefeld DOT de]
 
+This project has moved to: https://github.com/CentralLabFacilities/clf_2d_gpu_detect
+
 Detect any kind of objects using 2d object detection and GPU acceleration
 using OpenCV and CUDA
 
