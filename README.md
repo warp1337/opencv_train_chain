@@ -36,7 +36,8 @@ Then:
 
 Collect images
 
-   otc-collect-data --help
+    otc-collect-data --help
+
 
 An exemplary config file can be found in the cfg folder.
 
